@@ -1,0 +1,190 @@
+:root {
+  color-scheme: light dark;
+  font-family: Inter, Roboto, Arial, sans-serif;
+  background: #f7f7f7;
+  color: #111;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    background: #111;
+    color: #f1f1f1;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  width: 380px;
+  margin: 0;
+}
+
+main {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+}
+
+.loading {
+  min-height: 180px;
+  place-items: center;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.logo {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background: #ff0033;
+  color: white;
+  font-size: 28px;
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+h1 {
+  font-size: 17px;
+}
+
+header p,
+.hint,
+footer {
+  color: #666;
+  font-size: 11px;
+}
+
+@media (prefers-color-scheme: dark) {
+  header p,
+  .hint,
+  footer {
+    color: #aaa;
+  }
+}
+
+section {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(128, 128, 128, 0.25);
+  border-radius: 12px;
+  background: rgba(128, 128, 128, 0.06);
+}
+
+h2 {
+  font-size: 12px;
+}
+
+.grid {
+  display: grid;
+  gap: 9px;
+}
+
+.grid.two {
+  grid-template-columns: 1fr 1fr;
+}
+
+label {
+  display: grid;
+  gap: 5px;
+  font-size: 11px;
+}
+
+input,
+select,
+button,
+.file-button {
+  font: inherit;
+}
+
+input:not([type='checkbox'], [type='range'], [type='file']),
+select {
+  width: 100%;
+  height: 34px;
+  padding: 0 9px;
+  border: 1px solid rgba(128, 128, 128, 0.35);
+  border-radius: 8px;
+  background: Canvas;
+  color: CanvasText;
+}
+
+input[type='range'] {
+  width: 100%;
+  accent-color: #ff0033;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.check input {
+  accent-color: #ff0033;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+button,
+.file-button {
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.secondary,
+.file-button {
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid rgba(128, 128, 128, 0.35);
+  background: Canvas;
+  color: CanvasText;
+}
+
+.file-button input {
+  display: none;
+}
+
+.danger {
+  border: 1px solid rgba(217, 48, 37, 0.4);
+  background: rgba(217, 48, 37, 0.08);
+  color: #d93025;
+}
+
+.save {
+  min-height: 38px;
+  border: 0;
+  background: #ff0033;
+  color: white;
+}
+
+.status {
+  padding: 9px;
+  border-radius: 8px;
+  background: rgba(22, 134, 66, 0.12);
+  color: #168642;
+  font-size: 11px;
+}
+
+footer {
+  text-align: center;
+}
