@@ -64,7 +64,7 @@ button {
   border: 0;
   background: transparent;
   cursor: pointer;
-  text-align: left;
+  text-align: start;
 }
 
 .summary:hover {
@@ -175,7 +175,7 @@ button {
   overflow: hidden;
   color: var(--pz-text);
   font-size: 12px;
-  text-align: right;
+  text-align: end;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -501,7 +501,7 @@ button:disabled {
 }
 
 .plan-result strong {
-  text-align: right;
+  text-align: end;
 }
 
 .plan-result small {

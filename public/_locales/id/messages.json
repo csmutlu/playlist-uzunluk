@@ -1,0 +1,7 @@
+{
+  "extensionName": { "message": "Playlist Zamanı" },
+  "extensionShortName": { "message": "Playlist Zamanı" },
+  "extensionDescription": {
+    "message": "Menghitung total dan sisa waktu playlist YouTube pada berbagai kecepatan serta menyimpan progres."
+  }
+}

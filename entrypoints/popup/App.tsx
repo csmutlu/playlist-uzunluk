@@ -1,6 +1,13 @@
 import { useEffect, useState } from 'preact/hooks';
 import { DEFAULT_SETTINGS, MAX_SPEED, MIN_SPEED } from '../../lib/constants';
 import {
+  LOCALE_OPTIONS,
+  localeDirection,
+  localeTag,
+  resolveLocale,
+  t,
+} from '../../lib/i18n';
+import {
   clearAllProgress,
   exportProgress,
   getApiKey,
@@ -16,6 +23,7 @@ export function App() {
   const [apiKey, setApiKey] = useState('');
   const [loaded, setLoaded] = useState(false);
   const [status, setStatus] = useState('');
+  const locale = resolveLocale(settings.locale, navigator.language, navigator.languages);
 
   useEffect(() => {
     Promise.all([getSettings(), getApiKey()]).then(([nextSettings, key]) => {
@@ -24,6 +32,11 @@ export function App() {
       setLoaded(true);
     });
   }, []);
+
+  useEffect(() => {
+    document.documentElement.lang = localeTag(locale);
+    document.documentElement.dir = localeDirection(locale);
+  }, [locale]);
 
   const update = <K extends keyof ExtensionSettings>(
     key: K,
@@ -37,11 +50,11 @@ export function App() {
         origins: ['https://www.googleapis.com/*'],
       });
       if (!granted) {
-        setStatus('Google API izni verilmedi; DOM hesaplama çalışmaya devam eder.');
+        setStatus(t(locale, 'apiPermissionDenied'));
       }
     }
     await Promise.all([saveSettings(settings), saveApiKey(apiKey)]);
-    setStatus((current) => current || 'Ayarlar kaydedildi.');
+    setStatus((current) => current || t(locale, 'settingsSaved'));
   };
 
   const downloadProgress = async () => {
@@ -58,55 +71,56 @@ export function App() {
     if (!file) return;
     try {
       const count = await importProgress(await file.text());
-      setStatus(`${count} playlist ilerlemesi içe aktarıldı.`);
+      setStatus(t(locale, 'progressImported', { count }));
     } catch {
-      setStatus('Geçersiz veya desteklenmeyen ilerleme dosyası.');
+      setStatus(t(locale, 'invalidProgress'));
     }
   };
 
-  if (!loaded) return <main class="loading">Yükleniyor…</main>;
+  if (!loaded) return <main class="loading">{t(locale, 'loading')}</main>;
 
   return (
-    <main>
+    <main dir={localeDirection(locale)} lang={localeTag(locale)}>
       <header>
         <span class="logo">◷</span>
         <div>
           <h1>Playlist Zamanı</h1>
-          <p>Hızlı, yerel ve gizlilik odaklı.</p>
+          <p>{t(locale, 'popupTagline')}</p>
         </div>
       </header>
 
       <section>
-        <h2>Görünüm ve hesaplama</h2>
+        <h2>{t(locale, 'appearanceCalculation')}</h2>
         <div class="grid two">
           <label>
-            <span>Dil</span>
+            <span>{t(locale, 'language')}</span>
             <select
               value={settings.locale}
               onChange={(event) =>
                 update('locale', event.currentTarget.value as ExtensionSettings['locale'])
               }
             >
-              <option value="auto">Otomatik</option>
-              <option value="tr">Türkçe</option>
-              <option value="en">English</option>
+              <option value="auto">{t(locale, 'automatic')}</option>
+              {LOCALE_OPTIONS.map((option) => (
+                <option value={option.value}>{option.label}</option>
+              ))}
             </select>
           </label>
           <label>
-            <span>Tema</span>
+            <span>{t(locale, 'theme')}</span>
             <select
               value={settings.theme}
               onChange={(event) =>
                 update('theme', event.currentTarget.value as ExtensionSettings['theme'])
               }
             >
-              <option value="auto">YouTube ile aynı</option>
-              <option value="light">Açık</option>
-              <option value="dark">Koyu</option>
+              <option value="auto">{t(locale, 'followYouTube')}</option>
+              <option value="light">{t(locale, 'light')}</option>
+              <option value="dark">{t(locale, 'dark')}</option>
             </select>
           </label>
           <label>
-            <span>Varsayılan hız</span>
+            <span>{t(locale, 'defaultSpeed')}</span>
             <input
               type="number"
               min={MIN_SPEED}
@@ -117,7 +131,7 @@ export function App() {
             />
           </label>
           <label>
-            <span>Özel hız</span>
+            <span>{t(locale, 'customSpeed')}</span>
             <input
               type="number"
               min={MIN_SPEED}
@@ -134,11 +148,13 @@ export function App() {
             checked={settings.showSeconds}
             onChange={(event) => update('showSeconds', event.currentTarget.checked)}
           />
-          <span>Saniyeleri göster</span>
+          <span>{t(locale, 'showSeconds')}</span>
         </label>
         <label>
           <span>
-            Otomatik izlendi eşiği: %{Math.round(settings.completionThreshold * 100)}
+            {t(locale, 'completionThreshold', {
+              percent: Math.round(settings.completionThreshold * 100),
+            })}
           </span>
           <input
             type="range"
@@ -154,13 +170,10 @@ export function App() {
       </section>
 
       <section>
-        <h2>Büyük playlistler için API</h2>
-        <p class="hint">
-          İsteğe bağlıdır. Anahtar yalnızca bu cihazda saklanır ve doğrudan Google API’ye
-          gönderilir.
-        </p>
+        <h2>{t(locale, 'apiForLargePlaylists')}</h2>
+        <p class="hint">{t(locale, 'apiHint')}</p>
         <label>
-          <span>YouTube Data API anahtarı</span>
+          <span>{t(locale, 'apiKey')}</span>
           <input
             type="password"
             autocomplete="off"
@@ -172,13 +185,13 @@ export function App() {
       </section>
 
       <section>
-        <h2>İlerleme verisi</h2>
+        <h2>{t(locale, 'progressData')}</h2>
         <div class="actions">
           <button type="button" class="secondary" onClick={() => void downloadProgress()}>
-            Dışa aktar
+            {t(locale, 'export')}
           </button>
           <label class="file-button">
-            İçe aktar
+            {t(locale, 'import')}
             <input
               type="file"
               accept="application/json,.json"
@@ -189,20 +202,22 @@ export function App() {
             type="button"
             class="danger"
             onClick={() => {
-              if (!window.confirm('Tüm playlist ilerlemesi silinsin mi?')) return;
-              void clearAllProgress().then(() => setStatus('Tüm ilerleme verisi silindi.'));
+              if (!window.confirm(t(locale, 'confirmDelete'))) return;
+              void clearAllProgress().then(() => setStatus(t(locale, 'progressDeleted')));
             }}
           >
-            İlerlemeyi sil
+            {t(locale, 'deleteProgress')}
           </button>
         </div>
       </section>
 
       {status && <div class="status" role="status">{status}</div>}
       <button type="button" class="save" onClick={() => void save()}>
-        Ayarları kaydet
+        {t(locale, 'saveSettings')}
       </button>
-      <footer>v1.0.0 · Analitik ve telemetri içermez</footer>
+      <footer>
+        v{chrome.runtime.getManifest().version} · {t(locale, 'noTelemetry')}
+      </footer>
     </main>
   );
 }

@@ -1,6 +1,22 @@
 export const SCHEMA_VERSION = 1 as const;
 
-export type Locale = 'tr' | 'en';
+export const SUPPORTED_LOCALES = [
+  'tr',
+  'en',
+  'es',
+  'fr',
+  'ar',
+  'de',
+  'pt-BR',
+  'ru',
+  'hi',
+  'id',
+  'ja',
+  'ko',
+  'zh-CN',
+] as const;
+
+export type Locale = (typeof SUPPORTED_LOCALES)[number];
 export type Theme = 'auto' | 'light' | 'dark';
 export type VideoSource = 'dom' | 'api';
 export type VideoAvailability = 'available' | 'unavailable' | 'live' | 'unknown';

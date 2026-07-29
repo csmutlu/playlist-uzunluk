@@ -1,0 +1,7 @@
+{
+  "extensionName": { "message": "Playlist Zamanı" },
+  "extensionShortName": { "message": "Playlist Zamanı" },
+  "extensionDescription": {
+    "message": "YouTube प्लेलिस्ट का कुल और बचा समय अलग-अलग गति पर गिनता है और प्रगति सहेजता है।"
+  }
+}

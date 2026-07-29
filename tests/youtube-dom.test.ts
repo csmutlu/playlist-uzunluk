@@ -99,4 +99,22 @@ describe('YouTube DOM adapters', () => {
     expect(findPanelAnchor()).toBe(anchor);
     expect(expectedVideoCount()).toBe(190);
   });
+
+  it('reads localized Arabic counts and duration digits', () => {
+    document.body.innerHTML = `
+      <yt-page-header-renderer>
+        <yt-page-header-view-model>
+          <div class="ytPageHeaderViewModelHeadlineInfo"><span>١٩٠ فيديو</span></div>
+        </yt-page-header-view-model>
+      </yt-page-header-renderer>
+      <yt-lockup-view-model>
+        <a class="ytLockupViewModelContentImage"
+           href="/watch?v=arabicdigits&list=${playlistId}&index=1">١:٠١:٤٦</a>
+        <h3><a href="/watch?v=arabicdigits&list=${playlistId}&index=1">فيديو</a></h3>
+      </yt-lockup-view-model>
+    `;
+
+    expect(expectedVideoCount()).toBe(190);
+    expect(rowsWithin(document, playlistId)[0]?.video.durationSeconds).toBe(3_706);
+  });
 });

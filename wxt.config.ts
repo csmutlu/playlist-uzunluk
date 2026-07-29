@@ -6,10 +6,10 @@ export default defineConfig({
     plugins: [preact()],
   }),
   manifest: ({ browser }) => ({
-    name: 'Playlist Zamanı',
-    short_name: 'Playlist Zamanı',
-    description:
-      'YouTube playlistlerinin toplam ve kalan süresini hızlara göre hesaplar, ilerlemeyi ve çalışma planını takip eder.',
+    default_locale: 'en',
+    name: '__MSG_extensionName__',
+    short_name: '__MSG_extensionShortName__',
+    description: '__MSG_extensionDescription__',
     version: '1.0.0',
     ...(browser === 'firefox'
       ? {
@@ -36,7 +36,7 @@ export default defineConfig({
       128: 'icon-128.png',
     },
     action: {
-      default_title: 'Playlist Zamanı',
+      default_title: '__MSG_extensionName__',
     },
   }),
 });

@@ -11,7 +11,13 @@ import {
   formatDuration,
   speedAdjustedSeconds,
 } from '../../lib/duration';
-import { t } from '../../lib/i18n';
+import {
+  localeDirection,
+  localeTag,
+  t,
+  weekdayLabels,
+  type MessageKey,
+} from '../../lib/i18n';
 import { buildDailyPlan } from '../../lib/planner';
 
 interface PanelProps {
@@ -19,6 +25,15 @@ interface PanelProps {
 }
 
 type CalculationMode = 'all' | 'remaining' | 'range';
+
+const API_ERROR_MESSAGES: Record<string, MessageKey> = {
+  missing_permission: 'apiPermissionDenied',
+  missing_key: 'apiKeyMissing',
+  quota: 'apiQuotaExceeded',
+  private: 'apiPrivatePlaylist',
+  network: 'apiNetworkError',
+  unknown: 'apiUnknownError',
+};
 
 function useController(controller: ContentController): ControllerSnapshot {
   const [snapshot, setSnapshot] = useState(controller.snapshot());
@@ -114,7 +129,12 @@ export function Panel({ controller }: PanelProps) {
   };
 
   return (
-    <section class={`panel ${expanded ? 'is-expanded' : ''}`} aria-label="Playlist Zamanı">
+    <section
+      class={`panel ${expanded ? 'is-expanded' : ''}`}
+      aria-label="Playlist Zamanı"
+      dir={localeDirection(locale)}
+      lang={localeTag(locale)}
+    >
       <button
         type="button"
         class="summary"
@@ -280,7 +300,7 @@ export function Panel({ controller }: PanelProps) {
               </div>
               <div class="custom-speed">
                 <label>
-                  <span>Özel / Custom</span>
+                  <span>{t(locale, 'customSpeed')}</span>
                   <input
                     type="number"
                     min="0.25"
@@ -326,7 +346,7 @@ export function Panel({ controller }: PanelProps) {
                   </label>
                 </div>
                 <div class="weekday-row">
-                  {['Pz', 'Pt', 'Sa', 'Ça', 'Pe', 'Cu', 'Ct'].map((label, day) => (
+                  {weekdayLabels(locale).map((label, day) => (
                     <button
                       type="button"
                       class={weekdays.includes(day) ? 'active' : ''}
@@ -347,7 +367,7 @@ export function Panel({ controller }: PanelProps) {
                   <span>{t(locale, 'finishDate')}</span>
                   <strong>
                     {plan.finishDate
-                      ? new Intl.DateTimeFormat(locale === 'tr' ? 'tr-TR' : 'en-US', {
+                      ? new Intl.DateTimeFormat(localeTag(locale), {
                           dateStyle: 'long',
                         }).format(plan.finishDate)
                       : '—'}
@@ -376,7 +396,11 @@ export function Panel({ controller }: PanelProps) {
                   </button>
                 </div>
               )}
-              {snapshot.error && <div class="error" role="alert">{snapshot.error}</div>}
+              {snapshot.error && (
+                <div class="error" role="alert">
+                  {t(locale, API_ERROR_MESSAGES[snapshot.error] ?? 'apiUnknownError')}
+                </div>
+              )}
             </>
           )}
         </div>

@@ -14,7 +14,11 @@ Playlist Zamanı, uzun eğitim ve çalışma playlistlerini planlamayı kolayla�
 - Videoları otomatik veya manuel izlendi olarak işaretleyin
 - Belirli bir video aralığını hesaplayın
 - Günlük hedef belirleyip tahmini bitiş tarihini görün
-- Türkçe ve İngilizce, açık ve koyu tema desteğini kullanın
+- Otomatik dil algılama ve 13 dil desteğini kullanın: Türkçe, İngilizce,
+  İspanyolca, Fransızca, Arapça, Almanca, Portekizce, Rusça, Hintçe,
+  Endonezce, Japonca, Korece ve Çince
+- Arapça RTL yerleşimi ile tüm dillerde yerel süre, tarih ve saat biçimlerinden yararlanın
+- YouTube ile uyumlu açık ve koyu tema desteğini kullanın
 
 Eklenti performans odaklıdır: sürekli polling yapmaz, yalnızca değişen playlist satırlarını işler ve boşta ağ isteği göndermez.
 

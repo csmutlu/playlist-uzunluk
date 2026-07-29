@@ -1,0 +1,7 @@
+{
+  "extensionName": { "message": "Playlist Zamanı" },
+  "extensionShortName": { "message": "Playlist Zamanı" },
+  "extensionDescription": {
+    "message": "Calculates total and remaining YouTube playlist time at multiple speeds and tracks progress."
+  }
+}

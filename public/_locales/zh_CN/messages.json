@@ -1,0 +1,7 @@
+{
+  "extensionName": { "message": "Playlist Zamanı" },
+  "extensionShortName": { "message": "Playlist Zamanı" },
+  "extensionDescription": {
+    "message": "按不同倍速计算YouTube播放列表的总时长和剩余时长，并保存观看进度。"
+  }
+}

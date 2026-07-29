@@ -2,6 +2,7 @@ import { DEFAULT_SETTINGS } from './constants';
 import { clampSpeed } from './duration';
 import {
   SCHEMA_VERSION,
+  SUPPORTED_LOCALES,
   type ExtensionSettings,
   type PlaylistCacheEntry,
   type PlaylistProgress,
@@ -33,7 +34,11 @@ export async function saveSettings(settings: ExtensionSettings): Promise<void> {
 function normalizeSettings(settings: ExtensionSettings): ExtensionSettings {
   return {
     schemaVersion: SCHEMA_VERSION,
-    locale: ['auto', 'tr', 'en'].includes(settings.locale) ? settings.locale : 'auto',
+    locale:
+      settings.locale === 'auto' ||
+      SUPPORTED_LOCALES.includes(settings.locale as (typeof SUPPORTED_LOCALES)[number])
+        ? settings.locale
+        : 'auto',
     defaultSpeed: clampSpeed(settings.defaultSpeed),
     customSpeed: clampSpeed(settings.customSpeed),
     showSeconds: Boolean(settings.showSeconds),

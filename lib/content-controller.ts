@@ -87,7 +87,11 @@ export class ContentController {
   constructor(initialSettings: ExtensionSettings) {
     this.settings = initialSettings;
     this.speed = initialSettings.defaultSpeed;
-    this.locale = resolveLocale(initialSettings.locale, document.documentElement.lang);
+    this.locale = resolveLocale(
+      initialSettings.locale,
+      document.documentElement.lang,
+      navigator.languages,
+    );
   }
 
   static async create(): Promise<ContentController> {
@@ -182,7 +186,7 @@ export class ContentController {
 
   async updateSettings(next: ExtensionSettings): Promise<void> {
     this.settings = next;
-    this.locale = resolveLocale(next.locale, document.documentElement.lang);
+    this.locale = resolveLocale(next.locale, document.documentElement.lang, navigator.languages);
     await this.setSpeed(next.defaultSpeed);
   }
 
@@ -212,13 +216,16 @@ export class ContentController {
         playlistId: this.playlistId,
         force,
       })) as ApiPlaylistResponse;
-      if (!response.ok) throw new Error(response.error ?? response.errorCode ?? 'API error');
+      if (!response.ok) {
+        this.error = response.errorCode ?? 'unknown';
+        return;
+      }
       if (response.playlistId !== this.playlistId) return;
       this.analyzer.setExpectedCount(response.expectedCount ?? null);
       this.analyzer.upsertMany(response.videos ?? []);
       this.refreshAnalysis();
     } catch (error) {
-      this.error = error instanceof Error ? error.message : 'API error';
+      this.error = error instanceof DOMException && error.name === 'AbortError' ? 'network' : 'unknown';
     } finally {
       this.busy = null;
       this.emit();

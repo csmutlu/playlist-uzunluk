@@ -1,7 +1,26 @@
 import type { Locale } from './types';
+import { localeTag } from './i18n';
+
+const DECIMAL_DIGIT_RANGES = [
+  [0x0660, 0x0669],
+  [0x06f0, 0x06f9],
+  [0x0966, 0x096f],
+  [0xff10, 0xff19],
+] as const;
+
+export function normalizeLocalizedDigits(value: string): string {
+  return value.replace(/\p{Nd}/gu, (digit) => {
+    const codePoint = digit.codePointAt(0);
+    if (codePoint === undefined || (codePoint >= 0x30 && codePoint <= 0x39)) return digit;
+    for (const [start, end] of DECIMAL_DIGIT_RANGES) {
+      if (codePoint >= start && codePoint <= end) return String(codePoint - start);
+    }
+    return digit;
+  });
+}
 
 export function parseDurationText(value: string): number | null {
-  const normalized = value.replace(/\s+/g, '').trim();
+  const normalized = normalizeLocalizedDigits(value).replace(/\s+/g, '').trim();
   if (!/^\d{1,4}:\d{2}(?::\d{2})?$/.test(normalized)) return null;
 
   const parts = normalized.split(':').map(Number);
@@ -39,32 +58,30 @@ export function formatDuration(
   const minutes = Math.floor((total % 3_600) / 60);
   const seconds = total % 60;
 
-  const units =
-    locale === 'tr'
-      ? [
-          [days, 'gün'],
-          [hours, 'saat'],
-          [minutes, 'dakika'],
-          [seconds, 'saniye'],
-        ]
-      : [
-          [days, days === 1 ? 'day' : 'days'],
-          [hours, hours === 1 ? 'hour' : 'hours'],
-          [minutes, minutes === 1 ? 'minute' : 'minutes'],
-          [seconds, seconds === 1 ? 'second' : 'seconds'],
-        ];
+  const units = [
+    [days, 'day'],
+    [hours, 'hour'],
+    [minutes, 'minute'],
+    [seconds, 'second'],
+  ] as const;
+  const numberFormat = (unit: Intl.NumberFormatOptions['unit']) =>
+    new Intl.NumberFormat(localeTag(locale), {
+      style: 'unit',
+      unit,
+      unitDisplay: 'long',
+      maximumFractionDigits: 0,
+    });
 
   const visible = units
     .filter(([value], index) => Number(value) > 0 && (showSeconds || index !== 3))
-    .map(([value, label]) => `${value} ${label}`);
+    .map(([value, unit]) => numberFormat(unit).format(value));
 
   if (visible.length > 0) return visible.join(' ');
-  if (!showSeconds) return locale === 'tr' ? '0 dakika' : '0 minutes';
-  return locale === 'tr' ? '0 saniye' : '0 seconds';
+  return numberFormat(showSeconds ? 'second' : 'minute').format(0);
 }
 
 export function formatClock(date: Date, locale: Locale): string {
-  return new Intl.DateTimeFormat(locale === 'tr' ? 'tr-TR' : 'en-US', {
+  return new Intl.DateTimeFormat(localeTag(locale), {
     hour: '2-digit',
     minute: '2-digit',
   }).format(date);

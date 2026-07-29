@@ -1,0 +1,7 @@
+{
+  "extensionName": { "message": "Playlist Zamanı" },
+  "extensionShortName": { "message": "Playlist Zamanı" },
+  "extensionDescription": {
+    "message": "YouTubeプレイリストの合計・残り時間を速度別に計算し、視聴進捗を保存します。"
+  }
+}

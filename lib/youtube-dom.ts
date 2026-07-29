@@ -1,4 +1,4 @@
-import { parseDurationText } from './duration';
+import { normalizeLocalizedDigits, parseDurationText } from './duration';
 import type { PlaylistVideo, VideoAvailability } from './types';
 
 export const ROW_SELECTOR = [
@@ -33,17 +33,28 @@ function normalizeText(value: string | null | undefined): string {
 
 function availabilityFromText(text: string, hasDuration: boolean): VideoAvailability {
   const normalized = text.toLocaleLowerCase();
-  if (/(deleted|private|unavailable|removed|silinmiş|gizli|kullanılamıyor)/i.test(normalized)) {
+  if (hasDuration) return 'available';
+  if (
+    /(deleted|private|unavailable|removed|silinmiş|gizli|kullanılamıyor|supprimée?|privée?|indisponible|eliminad[oa]|privad[oa]|no disponible|gelöscht|nicht verfügbar|indisponível|removid[oa]|удалено|недоступно|частное|محذوف|خاص|غير متاح|削除|非公開|利用不可|삭제|비공개|사용할 수 없음|已删除|私享|无法播放|हटाया|निजी|उपलब्ध नहीं|dihapus|pribadi|tidak tersedia)/iu.test(
+      normalized,
+    )
+  ) {
     return 'unavailable';
   }
-  if (/(live|canlı|premiere|prömiyer)/i.test(normalized) && !hasDuration) return 'live';
-  return hasDuration ? 'available' : 'unknown';
+  if (
+    /(live|canlı|premiere|prömiyer|en direct|estreno|direkt|ao vivo|прямой эфир|премьера|مباشر|عرض أول|ライブ|プレミア公開|실시간|최초 공개|直播|首播|लाइव|प्रीमियर|langsung)/iu.test(
+      normalized,
+    )
+  ) {
+    return 'live';
+  }
+  return 'unknown';
 }
 
 function durationFromRow(row: Element): number | null {
   for (const selector of DURATION_SELECTORS) {
     for (const candidate of row.querySelectorAll(selector)) {
-      const text = normalizeText(candidate.textContent);
+      const text = normalizeLocalizedDigits(normalizeText(candidate.textContent));
       const exact = text.match(/\b\d{1,4}:\d{2}(?::\d{2})?\b/)?.[0];
       if (!exact) continue;
       const parsed = parseDurationText(exact);
@@ -138,11 +149,14 @@ export function getCurrentVideo(url = location.href): { videoId: string; index: 
 }
 
 function parseCountText(text: string): number | null {
-  const denominator = text.match(/\b\d+\s*\/\s*([\d.,]+)\b/)?.[1];
-  const videoCount = text.match(/([\d.,]+)\s*(?:video|videos)\b/i)?.[1];
+  const normalized = normalizeLocalizedDigits(text);
+  const denominator = normalized.match(/\b\d+\s*\/\s*([\d.,٬\s]+)\b/u)?.[1];
+  const videoCount = normalized.match(
+    /([\d.,٬\s]+)\s*(?:video|videos|vidéo|vidéos|vídeo|vídeos|فيديو|فيديوهات|वीडियो|動画|동영상|视频|видео|videolar)(?=\s|$|[•·])/iu,
+  )?.[1];
   const raw = denominator ?? videoCount;
   if (!raw) return null;
-  const value = Number(raw.replace(/[.,](?=\d{3}\b)/g, ''));
+  const value = Number(raw.replace(/[.,٬\s](?=\d{3}\b)/gu, '').trim());
   return Number.isInteger(value) && value >= 0 ? value : null;
 }
 

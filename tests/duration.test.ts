@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   clampSpeed,
   formatDuration,
+  normalizeLocalizedDigits,
   parseDurationText,
   speedAdjustedSeconds,
 } from '../lib/duration';
@@ -12,6 +13,9 @@ describe('duration helpers', () => {
     expect(parseDurationText('27:17')).toBe(1_637);
     expect(parseDurationText('1:01:46')).toBe(3_706);
     expect(parseDurationText(' 1:06:35 ')).toBe(3_995);
+    expect(parseDurationText('١:٠١:٤٦')).toBe(3_706);
+    expect(parseDurationText('१:०१:४६')).toBe(3_706);
+    expect(normalizeLocalizedDigits('۱۲۳')).toBe('123');
     expect(parseDurationText('12:61')).toBeNull();
     expect(parseDurationText('LIVE')).toBeNull();
   });
@@ -28,6 +32,14 @@ describe('duration helpers', () => {
     );
     expect(formatDuration(3_661, 'en')).toBe('1 hour 1 minute 1 second');
     expect(formatDuration(3_661, 'tr', false)).toBe('1 saat 1 dakika');
+  });
+
+  it('formats durations with localized plural rules and scripts', () => {
+    expect(formatDuration(3_661, 'fr')).toContain('heure');
+    expect(formatDuration(3_661, 'es')).toContain('minuto');
+    expect(formatDuration(3_661, 'ar')).toContain('ساعة');
+    expect(formatDuration(3_661, 'hi')).toContain('घंटा');
+    expect(formatDuration(3_661, 'ja')).toContain('時間');
   });
 
   it('adjusts and clamps speed safely', () => {

@@ -12,7 +12,10 @@ YouTube playlistlerinin toplam süresini, kalan izleme zamanını ve farklı oyn
 - Başlangıç ve bitiş videosu seçerek belirli bir aralığın süresini hesaplar.
 - Günlük çalışma süresi ve aktif günlere göre tahmini bitiş tarihi çıkarır.
 - Oynatma hızını YouTube oynatıcısıyla çift yönlü eşitler.
-- Türkçe ve İngilizce arayüz ile açık/koyu tema sunar.
+- Otomatik dil algılama; Türkçe, İngilizce, İspanyolca, Fransızca, Arapça,
+  Almanca, Portekizce, Rusça, Hintçe, Endonezce, Japonca, Korece ve Çince arayüz sunar.
+- Arapçada RTL yerleşimini; tüm dillerde yerel süre, tarih, saat ve hafta günü biçimlerini kullanır.
+- YouTube ile uyumlu açık/koyu tema sunar.
 - Public playlistler için isteğe bağlı YouTube Data API desteği sağlar.
 
 ![Playlist Zamanı ayrıntılı görünüm](docs/screenshots/playlist-details.png)

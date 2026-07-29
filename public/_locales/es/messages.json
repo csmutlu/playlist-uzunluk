@@ -1,0 +1,7 @@
+{
+  "extensionName": { "message": "Playlist Zamanı" },
+  "extensionShortName": { "message": "Playlist Zamanı" },
+  "extensionDescription": {
+    "message": "Calcula el tiempo total y restante de listas de YouTube a distintas velocidades y guarda el progreso."
+  }
+}
