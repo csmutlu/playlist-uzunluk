@@ -9,11 +9,13 @@ import {
   watchedAndRemainingSeconds,
 } from './analysis';
 import { clampSpeed } from './duration';
-import { resolveLocale } from './i18n';
+import { resolveLocale, t } from './i18n';
+import { clampUniversalSpeed } from './universal';
 import {
   emptyProgress,
   getPlaylistProgress,
   getSettings,
+  savePlaylistHistoryEntry,
   savePlaylistProgress,
   saveSettings,
 } from './storage';
@@ -22,13 +24,17 @@ import type {
   ExtensionSettings,
   Locale,
   PlaylistAnalysis,
+  PlaylistHistoryEntry,
   PlaylistProgress,
 } from './types';
 import {
+  ROW_SELECTOR,
   expectedVideoCount,
+  findPlaylistMetadataContainer,
   findVideoListContainer,
   getCurrentVideo,
   getPlaylistId,
+  playlistTitle,
   rowsWithin,
 } from './youtube-dom';
 
@@ -62,6 +68,7 @@ function cancelIdle(handle: number): void {
 
 export class ContentController {
   private analyzer: PlaylistAnalyzer | null = null;
+  private apiExpectedCount: number | null = null;
   private analysis: PlaylistAnalysis | null = null;
   private progress: PlaylistProgress | null = null;
   private settings: ExtensionSettings;
@@ -73,12 +80,21 @@ export class ContentController {
   private error: string | null = null;
   private subscribers = new Set<Subscriber>();
   private listObserver: MutationObserver | null = null;
+  private metadataObserver: MutationObserver | null = null;
+  private metadataContainer: HTMLElement | null = null;
   private listContainer: HTMLElement | null = null;
   private pendingRoots = new Set<ParentNode>();
+  private pendingRemovedRows = new Set<HTMLElement>();
+  private readonly rowVideoByElement = new WeakMap<HTMLElement, string>();
+  private readonly rowElementsByVideo = new Map<string, Set<HTMLElement>>();
+  private readonly staleVideoIds = new Set<string>();
   private mutationTimer: number | null = null;
+  private metadataTimer: number | null = null;
   private idleHandle: number | null = null;
   private flushTimer: number | null = null;
   private progressDirty = false;
+  private historyDirty = false;
+  private routeOpenedAt = Date.now();
   private currentMedia: HTMLVideoElement | null = null;
   private lastVisualUpdate = 0;
   private scrollCancelled = false;
@@ -92,6 +108,8 @@ export class ContentController {
       document.documentElement.lang,
       navigator.languages,
     );
+    document.addEventListener('visibilitychange', this.handleVisibility, { passive: true });
+    window.addEventListener('pagehide', this.handlePageHide, { passive: true });
   }
 
   static async create(): Promise<ContentController> {
@@ -118,6 +136,35 @@ export class ContentController {
     };
   }
 
+  diagnosticReport(): string {
+    const analysis = this.analysis;
+    const adapter =
+      this.listContainer?.querySelector(ROW_SELECTOR)?.tagName.toLocaleLowerCase() ?? 'none';
+    const version =
+      typeof chrome !== 'undefined' && chrome.runtime?.getManifest
+        ? chrome.runtime.getManifest().version
+        : 'development';
+    return JSON.stringify(
+      {
+        extension: 'Playlist Zamanı',
+        version,
+        page: location.pathname === '/watch' ? 'watch' : 'playlist',
+        locale: this.locale,
+        adapter,
+        expectedVideos: analysis?.expectedCount ?? null,
+        countedVideos: analysis?.countedCount ?? 0,
+        complete: analysis?.listComplete ?? false,
+        unknownDurations: analysis?.unknownDurationCount ?? 0,
+        unavailableVideos: analysis?.unavailableCount ?? 0,
+        busy: this.busy,
+        error: this.error,
+        generatedAt: new Date().toISOString(),
+      },
+      null,
+      2,
+    );
+  }
+
   async navigate(): Promise<void> {
     const token = ++this.routeToken;
     const previousPlaylistId = this.playlistId;
@@ -133,8 +180,10 @@ export class ContentController {
 
     const playlistId = nextPlaylistId;
     this.playlistId = playlistId;
+    this.routeOpenedAt = Date.now();
     this.analysis = null;
     this.analyzer = playlistId ? new PlaylistAnalyzer(playlistId) : null;
+    this.apiExpectedCount = null;
     this.progress = playlistId ? await getPlaylistProgress(playlistId) : null;
     if (token !== this.routeToken) return;
     this.error = null;
@@ -153,8 +202,10 @@ export class ContentController {
       this.observeList(this.listContainer);
       this.listContainer.addEventListener('click', this.handleDelegatedClick);
     }
+    this.observeMetadata();
     this.attachMedia();
     this.refreshAnalysis();
+    await this.flushProgress();
   }
 
   async refreshDom(): Promise<void> {
@@ -165,11 +216,14 @@ export class ContentController {
       this.listObserver?.disconnect();
       this.listContainer?.removeEventListener('click', this.handleDelegatedClick);
       this.listContainer = container;
-      this.analyzer.upsertMany(rowsWithin(container, this.playlistId).map((item) => item.video));
-      this.decorateRows(rowsWithin(container, this.playlistId));
+      this.resetRowRegistry();
+      const rows = rowsWithin(container, this.playlistId);
+      this.analyzer.upsertMany(rows.map((item) => item.video));
+      this.decorateRows(rows);
       this.observeList(container);
       container.addEventListener('click', this.handleDelegatedClick);
     }
+    this.observeMetadata();
     this.attachMedia();
     this.refreshAnalysis();
   }
@@ -187,6 +241,7 @@ export class ContentController {
   async updateSettings(next: ExtensionSettings): Promise<void> {
     this.settings = next;
     this.locale = resolveLocale(next.locale, document.documentElement.lang, navigator.languages);
+    this.syncAllRowButtons();
     await this.setSpeed(next.defaultSpeed);
   }
 
@@ -221,9 +276,11 @@ export class ContentController {
         return;
       }
       if (response.playlistId !== this.playlistId) return;
-      this.analyzer.setExpectedCount(response.expectedCount ?? null);
+      this.apiExpectedCount = response.expectedCount ?? null;
+      this.analyzer.setExpectedCount(this.apiExpectedCount);
       this.analyzer.upsertMany(response.videos ?? []);
       this.refreshAnalysis();
+      await this.flushProgress();
     } catch (error) {
       this.error = error instanceof DOMException && error.name === 'AbortError' ? 'network' : 'unknown';
     } finally {
@@ -268,6 +325,7 @@ export class ContentController {
     } finally {
       window.scrollTo({ top: originalY, behavior: 'auto' });
       this.busy = null;
+      await this.flushProgress();
       this.emit();
     }
   }
@@ -304,32 +362,92 @@ export class ContentController {
   private observeList(container: HTMLElement): void {
     this.listObserver = new MutationObserver((records) => {
       for (const record of records) {
-        for (const node of record.addedNodes) {
-          if (node instanceof HTMLElement) this.pendingRoots.add(node);
+        if (record.type === 'childList') {
+          for (const node of record.addedNodes) {
+            if (node instanceof HTMLElement) {
+              if (node.closest('.pz-row-toggle')) continue;
+              this.pendingRoots.add(node);
+              this.queueChangedRow(node);
+            } else if (node.parentElement) this.queueChangedRow(node.parentElement);
+          }
+          for (const node of record.removedNodes) {
+            if (!(node instanceof HTMLElement)) continue;
+            if (node.matches(ROW_SELECTOR)) this.pendingRemovedRows.add(node);
+            for (const row of node.querySelectorAll<HTMLElement>(ROW_SELECTOR)) {
+              this.pendingRemovedRows.add(row);
+            }
+            this.queueChangedRow(record.target);
+          }
+        } else {
+          const target =
+            record.target instanceof HTMLElement ? record.target : record.target.parentElement;
+          if (target && !target.closest('.pz-row-toggle')) this.queueChangedRow(target);
         }
       }
-      if (this.pendingRoots.size === 0 || this.mutationTimer !== null) return;
-      this.mutationTimer = window.setTimeout(() => {
-        this.mutationTimer = null;
-        const roots = [...this.pendingRoots];
-        this.pendingRoots.clear();
-        if (!this.analyzer || !this.playlistId) return;
-        let changed = 0;
-        for (const root of roots) {
-          const rows = rowsWithin(root, this.playlistId);
-          changed += this.analyzer.upsertMany(rows.map((item) => item.video));
-          this.decorateRows(rows);
-        }
-        if (changed > 0) this.refreshAnalysis();
-      }, MUTATION_BATCH_MS);
+      if (
+        (this.pendingRoots.size > 0 || this.pendingRemovedRows.size > 0) &&
+        this.mutationTimer === null
+      ) {
+        this.scheduleMutationFlush();
+      }
     });
-    this.listObserver.observe(container, { childList: true, subtree: true });
+    this.listObserver.observe(container, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ['href'],
+    });
+  }
+
+  private scheduleMutationFlush(): void {
+    this.mutationTimer = window.setTimeout(() => {
+      this.mutationTimer = null;
+      const roots = [...this.pendingRoots];
+      const removedRows = [...this.pendingRemovedRows];
+      this.pendingRoots.clear();
+      this.pendingRemovedRows.clear();
+      if (!this.analyzer || !this.playlistId) return;
+      let changed = 0;
+      for (const root of roots) {
+        const rows = rowsWithin(root, this.playlistId);
+        changed += this.analyzer.upsertMany(rows.map((item) => item.video));
+        this.decorateRows(rows);
+      }
+      for (const row of removedRows) {
+        if (row.isConnected && this.listContainer?.contains(row)) continue;
+        const videoId = this.rowVideoByElement.get(row);
+        if (videoId) this.unregisterRow(row, videoId);
+      }
+      if (changed > 0 || removedRows.length > 0) this.refreshAnalysis();
+    }, MUTATION_BATCH_MS);
+  }
+
+  private queueChangedRow(node: Node): void {
+    const element = node instanceof HTMLElement ? node : node.parentElement;
+    if (element?.closest('.pz-row-toggle')) return;
+    const row = element?.closest<HTMLElement>(ROW_SELECTOR);
+    if (row) this.pendingRoots.add(row);
   }
 
   private refreshAnalysis(): void {
     if (!this.analyzer) return;
-    this.analyzer.setExpectedCount(expectedVideoCount());
+    const parsedExpected = expectedVideoCount();
+    const expected =
+      (parsedExpected === 0 && this.analyzer.count > 0 ? null : parsedExpected) ??
+      this.apiExpectedCount;
+    this.analyzer.setExpectedCount(expected);
+    this.pruneConfirmedStaleVideos(expected);
+    const previous = this.analysis;
     this.analysis = this.analyzer.snapshot();
+    if (
+      !previous ||
+      previous.updatedAt !== this.analysis.updatedAt ||
+      previous.expectedCount !== this.analysis.expectedCount
+    ) {
+      this.historyDirty = true;
+      this.scheduleStorageFlush();
+    }
     this.emit();
   }
 
@@ -356,6 +474,8 @@ export class ContentController {
         });
         element.append(button);
       }
+      button.dataset.videoId = video.videoId;
+      this.registerRow(element, video.videoId);
       this.updateButton(button, video.videoId);
     }
   }
@@ -363,7 +483,7 @@ export class ContentController {
   private updateButton(button: HTMLButtonElement, videoId: string): void {
     const watched = this.progress?.videos[videoId]?.watched ?? false;
     button.textContent = watched ? '✓' : '○';
-    button.title = watched ? 'İzlendi' : 'İzlenmedi';
+    button.title = t(this.locale, watched ? 'markUnwatched' : 'markWatched');
     button.setAttribute('aria-label', button.title);
     button.setAttribute('aria-pressed', String(watched));
   }
@@ -374,6 +494,16 @@ export class ContentController {
       '.pz-row-toggle',
     )) {
       if (button.dataset.videoId === videoId) this.updateButton(button, videoId);
+    }
+  }
+
+  private syncAllRowButtons(): void {
+    if (!this.listContainer) return;
+    for (const button of this.listContainer.querySelectorAll<HTMLButtonElement>(
+      '.pz-row-toggle',
+    )) {
+      const videoId = button.dataset.videoId;
+      if (videoId) this.updateButton(button, videoId);
     }
   }
 
@@ -398,12 +528,10 @@ export class ContentController {
     media.addEventListener('ratechange', this.handleRateChange, { passive: true });
     media.addEventListener('pause', this.handlePersistEvent, { passive: true });
     media.addEventListener('ended', this.handlePersistEvent, { passive: true });
-    const desiredSpeed = clampSpeed(this.speed || this.settings.defaultSpeed);
+    const desiredSpeed = clampUniversalSpeed(this.speed || this.settings.defaultSpeed);
     if (media.playbackRate !== desiredSpeed) media.playbackRate = desiredSpeed;
     this.speed = desiredSpeed;
     this.updateCurrentVideo(true);
-    document.addEventListener('visibilitychange', this.handleVisibility, { passive: true });
-    window.addEventListener('pagehide', this.handlePageHide, { passive: true });
   }
 
   private detachMedia(): void {
@@ -466,7 +594,7 @@ export class ContentController {
 
   private readonly handleRateChange = (): void => {
     if (!this.currentMedia) return;
-    this.speed = clampSpeed(this.currentMedia.playbackRate);
+    this.speed = clampUniversalSpeed(this.currentMedia.playbackRate);
     this.emit();
   };
 
@@ -485,6 +613,11 @@ export class ContentController {
 
   private markDirty(): void {
     this.progressDirty = true;
+    this.historyDirty = true;
+    this.scheduleStorageFlush();
+  }
+
+  private scheduleStorageFlush(): void {
     if (this.flushTimer !== null) return;
     this.flushTimer = window.setTimeout(() => {
       this.flushTimer = null;
@@ -493,22 +626,142 @@ export class ContentController {
   }
 
   private async flushProgress(): Promise<void> {
-    if (!this.progressDirty || !this.progress) return;
-    this.progressDirty = false;
-    await savePlaylistProgress(this.progress);
+    if (this.flushTimer !== null) {
+      window.clearTimeout(this.flushTimer);
+      this.flushTimer = null;
+    }
+    const writes: Promise<void>[] = [];
+    if (this.progressDirty && this.progress) {
+      this.progressDirty = false;
+      writes.push(savePlaylistProgress(this.progress));
+    }
+    if (this.historyDirty) writes.push(this.flushHistory());
+    if (writes.length > 0) await Promise.all(writes);
   }
 
   private disconnectPage(): void {
     this.listObserver?.disconnect();
     this.listObserver = null;
+    this.metadataObserver?.disconnect();
+    this.metadataObserver = null;
+    this.metadataContainer = null;
     this.listContainer?.removeEventListener('click', this.handleDelegatedClick);
     this.listContainer = null;
     this.pendingRoots.clear();
+    this.pendingRemovedRows.clear();
+    this.rowElementsByVideo.clear();
+    this.staleVideoIds.clear();
     if (this.mutationTimer !== null) window.clearTimeout(this.mutationTimer);
     this.mutationTimer = null;
+    if (this.metadataTimer !== null) window.clearTimeout(this.metadataTimer);
+    this.metadataTimer = null;
     if (this.idleHandle !== null) cancelIdle(this.idleHandle);
     this.idleHandle = null;
     this.detachMedia();
+  }
+
+  private observeMetadata(): void {
+    const container = findPlaylistMetadataContainer();
+    if (container === this.metadataContainer && this.metadataObserver) return;
+    this.metadataObserver?.disconnect();
+    this.metadataContainer = container;
+    if (!container) return;
+    this.metadataObserver = new MutationObserver(() => {
+      if (this.metadataTimer !== null) return;
+      this.metadataTimer = window.setTimeout(() => {
+        this.metadataTimer = null;
+        this.observeMetadata();
+        this.refreshAnalysis();
+      }, MUTATION_BATCH_MS);
+    });
+    this.metadataObserver.observe(container, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
+    if (container.parentElement) {
+      this.metadataObserver.observe(container.parentElement, {
+        childList: true,
+      });
+    }
+  }
+
+  private registerRow(element: HTMLElement, videoId: string): void {
+    const previousVideoId = this.rowVideoByElement.get(element);
+    if (previousVideoId && previousVideoId !== videoId) {
+      this.unregisterRow(element, previousVideoId);
+    }
+    this.rowVideoByElement.set(element, videoId);
+    let elements = this.rowElementsByVideo.get(videoId);
+    if (!elements) {
+      elements = new Set();
+      this.rowElementsByVideo.set(videoId, elements);
+    }
+    elements.add(element);
+    this.staleVideoIds.delete(videoId);
+  }
+
+  private unregisterRow(element: HTMLElement, videoId: string): void {
+    const elements = this.rowElementsByVideo.get(videoId);
+    elements?.delete(element);
+    if (elements && elements.size === 0) {
+      this.rowElementsByVideo.delete(videoId);
+      this.staleVideoIds.add(videoId);
+    }
+  }
+
+  private resetRowRegistry(): void {
+    for (const videoId of this.rowElementsByVideo.keys()) this.staleVideoIds.add(videoId);
+    this.rowElementsByVideo.clear();
+  }
+
+  private pruneConfirmedStaleVideos(expected: number | null): void {
+    if (!this.analyzer) return;
+    if (expected === null || this.analyzer.count <= expected) return;
+    for (const videoId of this.staleVideoIds) {
+      if (this.rowElementsByVideo.has(videoId)) {
+        this.staleVideoIds.delete(videoId);
+        continue;
+      }
+      if (this.analyzer.remove(videoId)) this.staleVideoIds.delete(videoId);
+      if (this.analyzer.count <= expected) break;
+    }
+  }
+
+  private async flushHistory(): Promise<void> {
+    if (!this.historyDirty || !this.playlistId || !this.analysis) return;
+    this.historyDirty = false;
+    const times = watchedAndRemainingSeconds(
+      this.analysis,
+      this.progress,
+      this.currentVideo
+        ? {
+            videoId: this.currentVideo.videoId,
+            positionSeconds: this.currentVideo.positionSeconds,
+          }
+        : undefined,
+    );
+    const lastVideoId = this.progress?.lastVideoId ?? this.currentVideo?.videoId;
+    const lastVideoIndex = lastVideoId
+      ? this.analysis.videos.find((video) => video.videoId === lastVideoId)?.index
+      : undefined;
+    const entry: PlaylistHistoryEntry = {
+      schemaVersion: 1,
+      playlistId: this.playlistId,
+      title: playlistTitle() || this.playlistId,
+      videoCount: this.analysis.countedCount,
+      totalSeconds: times.selectedTotalSeconds,
+      remainingSeconds: times.remainingSeconds,
+      progressPercent:
+        times.selectedTotalSeconds > 0
+          ? Math.min(100, Math.max(0, (times.watchedSeconds / times.selectedTotalSeconds) * 100))
+          : 0,
+      lastVideoId,
+      lastVideoIndex,
+      lastOpenedAt: this.routeOpenedAt,
+      updatedAt: Date.now(),
+    };
+    await savePlaylistHistoryEntry(entry);
   }
 
   private emit(): void {

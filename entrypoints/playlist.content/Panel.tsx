@@ -63,6 +63,7 @@ export function Panel({ controller }: PanelProps) {
   const [dailyMinutes, setDailyMinutes] = useState(60);
   const [weekdays, setWeekdays] = useState([1, 2, 3, 4, 5]);
   const [startDate, setStartDate] = useState(localDateValue(new Date()));
+  const [diagnosticCopied, setDiagnosticCopied] = useState(false);
 
   useEffect(() => {
     const end = analysis?.expectedCount ?? analysis?.videos.at(-1)?.index ?? 1;
@@ -126,6 +127,23 @@ export function Panel({ controller }: PanelProps) {
     setRangeStart(current);
     setRangeEnd(analysis?.expectedCount ?? analysis?.videos.at(-1)?.index ?? current);
     setMode('range');
+  };
+
+  const copyDiagnostics = async () => {
+    const report = controller.diagnosticReport();
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(report);
+    } else {
+      const textarea = document.createElement('textarea');
+      textarea.value = report;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.append(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      textarea.remove();
+    }
+    setDiagnosticCopied(true);
   };
 
   return (
@@ -401,6 +419,13 @@ export function Panel({ controller }: PanelProps) {
                   {t(locale, API_ERROR_MESSAGES[snapshot.error] ?? 'apiUnknownError')}
                 </div>
               )}
+              <button
+                type="button"
+                class="diagnostics secondary"
+                onClick={() => void copyDiagnostics()}
+              >
+                {t(locale, diagnosticCopied ? 'diagnosticsCopied' : 'copyDiagnostics')}
+              </button>
             </>
           )}
         </div>

@@ -83,6 +83,11 @@ button {
   align-items: center;
 }
 
+.diagnostics {
+  width: 100%;
+  margin-top: 10px;
+}
+
 .brand {
   gap: 7px;
   min-width: 0;

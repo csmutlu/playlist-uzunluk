@@ -100,6 +100,32 @@ describe('YouTube DOM adapters', () => {
     expect(expectedVideoCount()).toBe(190);
   });
 
+  it('prefers a loaded positive count over a zero-valued skeleton header', () => {
+    document.body.innerHTML = `
+      <yt-page-header-renderer>
+        <yt-page-header-view-model>
+          <div class="ytPageHeaderViewModelHeadlineInfo"><span>0 videos</span></div>
+        </yt-page-header-view-model>
+      </yt-page-header-renderer>
+      <ytd-playlist-header-renderer>
+        <h1>Loaded playlist</h1><span>46 videos</span>
+      </ytd-playlist-header-renderer>
+    `;
+
+    expect(expectedVideoCount()).toBe(46);
+  });
+
+  it('does not mistake a year and slash in the playlist title for a counter', () => {
+    document.body.innerHTML = `
+      <ytd-playlist-header-renderer>
+        <h1>2026 / KPSS - Türkçe</h1>
+        <span>Creator · Course 46 videos Updated recently</span>
+      </ytd-playlist-header-renderer>
+    `;
+
+    expect(expectedVideoCount()).toBe(46);
+  });
+
   it('reads localized Arabic counts and duration digits', () => {
     document.body.innerHTML = `
       <yt-page-header-renderer>

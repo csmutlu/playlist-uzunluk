@@ -5,10 +5,6 @@ import type {
   VideoProgress,
 } from './types';
 
-function videoKey(video: PlaylistVideo): string {
-  return `${video.index}:${video.videoId}`;
-}
-
 export class PlaylistAnalyzer {
   readonly playlistId: string;
   private readonly videos = new Map<string, PlaylistVideo>();
@@ -23,25 +19,40 @@ export class PlaylistAnalyzer {
   }
 
   setExpectedCount(value: number | null): void {
-    if (value !== null && Number.isInteger(value) && value >= 0) this.expectedCount = value;
+    if (value === null) {
+      this.expectedCount = null;
+      return;
+    }
+    if (Number.isInteger(value) && value >= 0) this.expectedCount = value;
   }
 
   upsert(video: PlaylistVideo): boolean {
-    const key = videoKey(video);
-    const previous = this.videos.get(key);
+    const previous = this.videos.get(video.videoId);
+    const normalized = previous
+      ? {
+          ...video,
+          title: video.title || previous.title,
+          durationSeconds: video.durationSeconds ?? previous.durationSeconds,
+          availability:
+            video.availability === 'unknown' ? previous.availability : video.availability,
+          source:
+            previous.source === 'api' && video.source === 'dom' ? previous.source : video.source,
+        }
+      : video;
     if (
       previous &&
-      previous.durationSeconds === video.durationSeconds &&
-      previous.title === video.title &&
-      previous.availability === video.availability &&
-      previous.source === video.source
+      previous.index === normalized.index &&
+      previous.durationSeconds === normalized.durationSeconds &&
+      previous.title === normalized.title &&
+      previous.availability === normalized.availability &&
+      previous.source === normalized.source
     ) {
       return false;
     }
 
     if (previous) this.removeFromCounters(previous);
-    this.videos.set(key, video);
-    this.addToCounters(video);
+    this.videos.set(video.videoId, normalized);
+    this.addToCounters(normalized);
     this.updatedAt = Date.now();
     return true;
   }
@@ -58,6 +69,19 @@ export class PlaylistAnalyzer {
     return this.videos.size;
   }
 
+  has(videoId: string): boolean {
+    return this.videos.has(videoId);
+  }
+
+  remove(videoId: string): boolean {
+    const previous = this.videos.get(videoId);
+    if (!previous) return false;
+    this.removeFromCounters(previous);
+    this.videos.delete(videoId);
+    this.updatedAt = Date.now();
+    return true;
+  }
+
   snapshot(): PlaylistAnalysis {
     const videos = [...this.videos.values()].sort(
       (a, b) => a.index - b.index || a.videoId.localeCompare(b.videoId),
@@ -72,7 +96,7 @@ export class PlaylistAnalyzer {
       playlistId: this.playlistId,
       expectedCount: this.expectedCount,
       countedCount: videos.length,
-      listComplete: this.expectedCount !== null && videos.length >= this.expectedCount,
+      listComplete: this.expectedCount !== null && videos.length === this.expectedCount,
       unknownDurationCount: this.unknownDurationCount,
       unavailableCount: this.unavailableCount,
       totalSeconds: this.totalSeconds,

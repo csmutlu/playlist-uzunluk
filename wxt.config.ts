@@ -10,10 +10,17 @@ export default defineConfig({
     name: '__MSG_extensionName__',
     short_name: '__MSG_extensionShortName__',
     description: '__MSG_extensionDescription__',
-    version: '1.0.0',
+    version: '1.6.1',
     ...(browser === 'firefox'
       ? {
-          optional_permissions: ['https://www.googleapis.com/*'],
+          optional_permissions: [
+            'downloads',
+            'https://www.googleapis.com/*',
+            'http://*/*',
+            'https://*/*',
+            'file:///*',
+          ],
+          web_accessible_resources: ['universal-main.js'],
           browser_specific_settings: {
             gecko: {
               id: 'playlist-zamani@local',
@@ -26,9 +33,21 @@ export default defineConfig({
         }
       : {
           minimum_chrome_version: '114',
-          optional_host_permissions: ['https://www.googleapis.com/*'],
+          optional_host_permissions: [
+            'https://www.googleapis.com/*',
+            'http://*/*',
+            'https://*/*',
+            'file:///*',
+          ],
+          optional_permissions: ['downloads'],
+          web_accessible_resources: [
+            {
+              resources: ['universal-main.js'],
+              matches: ['http://*/*', 'https://*/*', 'file:///*'],
+            },
+          ],
         }),
-    permissions: ['storage'],
+    permissions: ['storage', 'scripting'],
     icons: {
       16: 'icon-16.png',
       32: 'icon-32.png',

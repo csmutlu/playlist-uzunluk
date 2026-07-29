@@ -1,9 +1,9 @@
 {
   "name": "playlist-zamani",
-  "version": "1.0.0",
+  "version": "1.6.1",
   "private": true,
   "type": "module",
-  "description": "Hızlı ve gizlilik odaklı YouTube playlist süre ve çalışma asistanı.",
+  "description": "YouTube playlist süre asistanı ve tüm siteler için hafif video hız kontrolü.",
   "repository": {
     "type": "git",
     "url": "https://github.com/csmutlu/playlist-uzunluk.git"
@@ -21,6 +21,9 @@
     "zip:firefox": "wxt zip -b firefox",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:brave": "npm run build && node scripts/brave-smoke.mjs",
+    "test:tabii": "npm run build && node scripts/tabii-live-test.mjs",
+    "test:stress": "npm run build && node scripts/universal-stress.mjs",
     "test:watch": "vitest",
     "check": "npm run typecheck && npm run test && npm run build",
     "check:firefox": "npm run typecheck && npm run test && npm run build:firefox",
@@ -33,6 +36,7 @@
     "@preact/preset-vite": "2.10.2",
     "@types/chrome": "0.1.20",
     "jsdom": "26.1.0",
+    "playwright-core": "^1.54.2",
     "typescript": "5.9.3",
     "vitest": "4.1.10",
     "wxt": "0.21.2"

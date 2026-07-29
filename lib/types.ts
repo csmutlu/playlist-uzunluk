@@ -59,6 +59,20 @@ export interface PlaylistProgress {
   updatedAt: number;
 }
 
+export interface PlaylistHistoryEntry {
+  schemaVersion: typeof SCHEMA_VERSION;
+  playlistId: string;
+  title: string;
+  videoCount: number;
+  totalSeconds: number;
+  remainingSeconds: number;
+  progressPercent: number;
+  lastVideoId?: string;
+  lastVideoIndex?: number;
+  lastOpenedAt: number;
+  updatedAt: number;
+}
+
 export interface ExtensionSettings {
   schemaVersion: typeof SCHEMA_VERSION;
   locale: Locale | 'auto';
@@ -88,6 +102,108 @@ export interface DailyPlanResult {
   activeDayCount: number;
 }
 
+export const UNIVERSAL_SETTINGS_VERSION = 1 as const;
+
+export type ShortcutAction =
+  | 'slower'
+  | 'faster'
+  | 'reset'
+  | 'preferred'
+  | 'rewind'
+  | 'advance'
+  | 'mark'
+  | 'jump'
+  | 'theater'
+  | 'toggleIndicator';
+
+export type CustomShortcutAction =
+  | ShortcutAction
+  | 'pause'
+  | 'toggleMute'
+  | 'volumeDown'
+  | 'volumeUp';
+
+export interface ShortcutBinding {
+  code: string;
+  alt: boolean;
+  ctrl: boolean;
+  meta: boolean;
+  shift: boolean;
+}
+
+export interface CustomShortcutBinding extends ShortcutBinding {
+  id: string;
+  action: CustomShortcutAction;
+  enabled: boolean;
+  value?: number;
+}
+
+export type IndicatorMode = 'flash' | 'always' | 'hidden';
+
+export interface UniversalControllerSettings {
+  schemaVersion: typeof UNIVERSAL_SETTINGS_VERSION;
+  enabled: boolean;
+  speedStep: number;
+  rewindSeconds: number;
+  advanceSeconds: number;
+  rememberPerSite: boolean;
+  indicatorMode: IndicatorMode;
+  fightbackDefault: boolean;
+  audioEnabled: boolean;
+  exclusiveKeys: boolean;
+  wheelEnabled: boolean;
+  controllerOpacity: number;
+  controllerSize: number;
+  customCss: string;
+  shortcuts: Record<ShortcutAction, ShortcutBinding>;
+  customShortcuts: CustomShortcutBinding[];
+}
+
+export interface SiteMediaRule {
+  enabled: boolean;
+  defaultSpeed?: number;
+  fightback?: boolean;
+  updatedAt: number;
+}
+
+export interface SitePlaybackState {
+  speed: number;
+  updatedAt: number;
+}
+
+export interface SitePatternRule extends SiteMediaRule {
+  id: string;
+  pattern: string;
+}
+
+export interface UniversalSiteData {
+  schemaVersion: typeof UNIVERSAL_SETTINGS_VERSION;
+  rules: Record<string, SiteMediaRule>;
+  patternRules: SitePatternRule[];
+  playback: Record<string, SitePlaybackState>;
+}
+
+export interface UniversalSiteInfo {
+  hostname: string;
+  enabled: boolean;
+  speed: number | null;
+  rule: SiteMediaRule | null;
+}
+
+export type MediaDownloadBlockReason =
+  | 'noMedia'
+  | 'blobMedia'
+  | 'adaptiveStream'
+  | 'drmProtected'
+  | 'unsupportedMedia';
+
+export interface MediaDownloadInfo {
+  available: boolean;
+  url?: string;
+  filename?: string;
+  reason?: MediaDownloadBlockReason;
+}
+
 export interface PlaylistCacheEntry {
   schemaVersion: typeof SCHEMA_VERSION;
   playlistId: string;
@@ -109,4 +225,16 @@ export interface ApiPlaylistResponse {
 export type BackgroundMessage =
   | { type: 'playlist-api:fetch'; playlistId: string; force?: boolean }
   | { type: 'playlist-api:cancel'; playlistId: string }
-  | { type: 'playlist-cache:clear' };
+  | { type: 'playlist-cache:clear' }
+  | { type: 'universal:register'; tabId?: number }
+  | { type: 'universal:unregister' }
+  | { type: 'universal:registration-status' }
+  | { type: 'universal:download'; url: string; filename?: string };
+
+export type UniversalContentMessage =
+  | { type: 'universal:disable' }
+  | { type: 'universal:site-info' }
+  | { type: 'universal:set-speed'; speed: number }
+  | { type: 'universal:adjust-speed'; delta: number }
+  | { type: 'universal:toggle-playback' }
+  | { type: 'universal:download-info' };

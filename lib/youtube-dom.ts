@@ -150,7 +150,7 @@ export function getCurrentVideo(url = location.href): { videoId: string; index: 
 
 function parseCountText(text: string): number | null {
   const normalized = normalizeLocalizedDigits(text);
-  const denominator = normalized.match(/\b\d+\s*\/\s*([\d.,٬\s]+)\b/u)?.[1];
+  const denominator = normalized.match(/\b\d+\s*\/\s*(\d[\d.,٬\s]*)\b/u)?.[1];
   const videoCount = normalized.match(
     /([\d.,٬\s]+)\s*(?:video|videos|vidéo|vidéos|vídeo|vídeos|فيديو|فيديوهات|वीडियो|動画|동영상|视频|видео|videolar)(?=\s|$|[•·])/iu,
   )?.[1];
@@ -168,13 +168,45 @@ export function expectedVideoCount(): number | null {
     'ytd-playlist-panel-renderer #header-description',
     'ytd-playlist-panel-renderer #header',
   ];
+  let foundZero = false;
   for (const selector of selectors) {
     const element = findRenderedElement(selector);
     if (!element) continue;
     const parsed = parseCountText(normalizeText(element.textContent));
-    if (parsed !== null) return parsed;
+    if (parsed !== null && parsed > 0) return parsed;
+    if (parsed === 0) foundZero = true;
+  }
+  return foundZero ? 0 : null;
+}
+
+export function findPlaylistMetadataContainer(): HTMLElement | null {
+  const selectors = [
+    'yt-page-header-renderer',
+    'yt-page-header-view-model',
+    'ytd-playlist-header-renderer',
+    'ytd-playlist-panel-renderer #header-description',
+  ];
+  for (const selector of selectors) {
+    const element = findRenderedElement(selector);
+    if (element) return element;
   }
   return null;
+}
+
+export function playlistTitle(): string {
+  const selectors = [
+    'yt-page-header-view-model h1',
+    'yt-page-header-renderer h1',
+    'ytd-playlist-header-renderer #title',
+    'ytd-playlist-panel-renderer #header-description h3',
+    'ytd-playlist-panel-renderer #header-description #title',
+  ];
+  for (const selector of selectors) {
+    const element = findRenderedElement(selector);
+    const title = normalizeText(element?.textContent);
+    if (title) return title;
+  }
+  return normalizeText(document.title.replace(/\s*-\s*YouTube\s*$/iu, ''));
 }
 
 export function findVideoListContainer(): HTMLElement | null {

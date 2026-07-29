@@ -58,6 +58,53 @@ describe('PlaylistAnalyzer', () => {
     expect(analyzer.snapshot().totalSeconds).toBe(90);
   });
 
+  it('keeps one canonical video when a playlist is reordered', () => {
+    const analyzer = new PlaylistAnalyzer('PL-test');
+    analyzer.upsertMany([video(1, 60), video(2, 90)]);
+
+    analyzer.upsert({ ...video(1, 60), index: 2 });
+    analyzer.upsert({ ...video(2, 90), index: 1 });
+
+    const result = analyzer.snapshot();
+    expect(result.countedCount).toBe(2);
+    expect(result.totalSeconds).toBe(150);
+    expect(result.videos.map(({ videoId, index }) => [videoId, index])).toEqual([
+      ['video-2', 1],
+      ['video-1', 2],
+    ]);
+  });
+
+  it('removes videos and preserves known API data during partial DOM updates', () => {
+    const analyzer = new PlaylistAnalyzer('PL-test');
+    analyzer.upsert({
+      ...video(1, 120),
+      title: 'API title',
+      source: 'api',
+    });
+    analyzer.upsert({
+      ...video(1, 0),
+      title: '',
+      durationSeconds: null,
+      availability: 'unknown',
+      source: 'dom',
+      index: 2,
+    });
+
+    expect(analyzer.snapshot().videos[0]).toMatchObject({
+      index: 2,
+      title: 'API title',
+      durationSeconds: 120,
+      availability: 'available',
+      source: 'api',
+    });
+    expect(analyzer.remove('video-1')).toBe(true);
+    expect(analyzer.snapshot()).toMatchObject({
+      countedCount: 0,
+      totalSeconds: 0,
+      unknownDurationCount: 0,
+    });
+  });
+
   it('uses prefix sums for range calculations', () => {
     const analyzer = new PlaylistAnalyzer('PL-test');
     analyzer.upsertMany([video(1, 10), video(2, 20), video(3, 30), video(4, 40)]);
