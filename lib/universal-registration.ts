@@ -28,14 +28,26 @@ function isFirefoxBuild(): boolean {
 }
 
 export async function hasUniversalHostPermission(): Promise<boolean> {
-  return browser.permissions.contains({ origins: [...UNIVERSAL_HOST_ORIGINS] });
+  return (await universalGrantedOrigins()).length > 0;
+}
+
+async function universalGrantedOrigins(): Promise<string[]> {
+  const results = await Promise.all(
+    UNIVERSAL_HOST_ORIGINS.map(async (origin) => ({
+      origin,
+      granted: await browser.permissions
+        .contains({ origins: [origin] })
+        .catch(() => false),
+    })),
+  );
+  return results.flatMap(({ origin, granted }) => (granted ? [origin] : []));
 }
 
 export async function isUniversalScriptRegistered(): Promise<boolean> {
-  if (isFirefoxBuild()) return firefoxRegisteredScript !== null;
+  if (isFirefoxBuild() && firefoxRegisteredScript) return true;
   const scripts = await browser.scripting.getRegisteredContentScripts({
     ids: [UNIVERSAL_SCRIPT_ID],
-  });
+  }).catch(() => []);
   return scripts.length > 0;
 }
 
@@ -44,18 +56,29 @@ export async function registerUniversalScript(tabId?: number): Promise<void> {
     origins: [UNIVERSAL_FILE_ORIGIN],
   }).catch(() => false);
   const matches = [
-    ...UNIVERSAL_HOST_ORIGINS,
+    ...await universalGrantedOrigins(),
     ...(hasFilePermission ? [UNIVERSAL_FILE_ORIGIN] : []),
   ];
+  if (matches.length === 0) throw new Error('Host permission missing');
   if (isFirefoxBuild()) {
-    if (!firefoxRegisteredScript) {
-      firefoxRegisteredScript = await firefoxContentScripts.register({
-        matches,
-        js: [{ file: UNIVERSAL_SCRIPT_PUBLIC_PATH }],
-        runAt: 'document_start',
-        allFrames: true,
-        matchAboutBlank: true,
-      });
+    if (!(await isUniversalScriptRegistered())) {
+      try {
+        firefoxRegisteredScript = await firefoxContentScripts.register({
+          matches,
+          js: [{ file: UNIVERSAL_SCRIPT_PUBLIC_PATH }],
+          runAt: 'document_start',
+          allFrames: true,
+          matchAboutBlank: true,
+        });
+      } catch {
+        await browser.scripting.registerContentScripts([{
+          id: UNIVERSAL_SCRIPT_ID,
+          matches,
+          js: [UNIVERSAL_SCRIPT_FILE],
+          runAt: 'document_start',
+          allFrames: true,
+        }]);
+      }
     }
     if (tabId !== undefined) {
       await browser.tabs.executeScript(tabId, {
@@ -109,6 +132,9 @@ export async function unregisterUniversalScript(): Promise<void> {
   if (isFirefoxBuild()) {
     await firefoxRegisteredScript?.unregister();
     firefoxRegisteredScript = null;
+    await browser.scripting
+      .unregisterContentScripts({ ids: [UNIVERSAL_SCRIPT_ID] })
+      .catch(() => undefined);
     return;
   }
   await browser.scripting.unregisterContentScripts({ ids: [UNIVERSAL_SCRIPT_ID] });

@@ -235,20 +235,24 @@ export function App() {
       const tab = activeTabId === undefined ? await activeTab() : undefined;
       const tabId = activeTabId ?? tab?.id;
       let registered = false;
+      let registrationError = '';
       try {
         const response = await browser.runtime.sendMessage({
           type: 'universal:register',
           ...(tabId === undefined ? {} : { tabId }),
-        }) as { ok: boolean };
+        }) as { ok: boolean; error?: string };
         registered = response.ok;
-      } catch {
+        registrationError = response.error ?? '';
+      } catch (error) {
         registered = false;
+        registrationError = error instanceof Error ? error.message : '';
       }
       if (!registered) {
-        await saveUniversalSettings({ ...universal, enabled: false });
-        await browser.permissions.remove({ origins: [...UNIVERSAL_HOST_ORIGINS] });
-        setHasUniversalPermission(false);
-        setStatus(ut(locale, 'permissionDenied'));
+        setUniversal(next);
+        setHasUniversalPermission(true);
+        setStatus(
+          `${ut(locale, 'siteUnavailable')}${registrationError ? `: ${registrationError}` : ''}`,
+        );
         return;
       }
       setUniversal(next);
