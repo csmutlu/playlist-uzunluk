@@ -3,6 +3,25 @@ import { UNIVERSAL_FILE_ORIGIN, UNIVERSAL_HOST_ORIGINS } from './constants';
 
 const UNIVERSAL_SCRIPT_ID = 'playlist-zamani-universal';
 const UNIVERSAL_SCRIPT_FILE = 'universal.js' as const;
+const UNIVERSAL_SCRIPT_PUBLIC_PATH = '/universal.js' as const;
+interface FirefoxRegisteredContentScript {
+  unregister(): Promise<void>;
+}
+
+interface FirefoxContentScriptsApi {
+  register(options: {
+    matches: string[];
+    js: Array<{ file: string }>;
+    runAt: 'document_start';
+    allFrames: boolean;
+    matchAboutBlank: boolean;
+  }): Promise<FirefoxRegisteredContentScript>;
+}
+
+const firefoxContentScripts = (
+  browser as unknown as { contentScripts: FirefoxContentScriptsApi }
+).contentScripts;
+let firefoxRegisteredScript: FirefoxRegisteredContentScript | null = null;
 
 function isFirefoxBuild(): boolean {
   return browser.runtime.getManifest().manifest_version === 2;
@@ -13,6 +32,7 @@ export async function hasUniversalHostPermission(): Promise<boolean> {
 }
 
 export async function isUniversalScriptRegistered(): Promise<boolean> {
+  if (isFirefoxBuild()) return firefoxRegisteredScript !== null;
   const scripts = await browser.scripting.getRegisteredContentScripts({
     ids: [UNIVERSAL_SCRIPT_ID],
   });
@@ -23,23 +43,39 @@ export async function registerUniversalScript(tabId?: number): Promise<void> {
   const hasFilePermission = await browser.permissions.contains({
     origins: [UNIVERSAL_FILE_ORIGIN],
   }).catch(() => false);
+  const matches = [
+    ...UNIVERSAL_HOST_ORIGINS,
+    ...(hasFilePermission ? [UNIVERSAL_FILE_ORIGIN] : []),
+  ];
+  if (isFirefoxBuild()) {
+    if (!firefoxRegisteredScript) {
+      firefoxRegisteredScript = await firefoxContentScripts.register({
+        matches,
+        js: [{ file: UNIVERSAL_SCRIPT_PUBLIC_PATH }],
+        runAt: 'document_start',
+        allFrames: true,
+        matchAboutBlank: true,
+      });
+    }
+    if (tabId !== undefined) {
+      await browser.tabs.executeScript(tabId, {
+        file: UNIVERSAL_SCRIPT_PUBLIC_PATH,
+        allFrames: true,
+        runAt: 'document_start',
+        matchAboutBlank: true,
+      }).catch(() => undefined);
+    }
+    return;
+  }
+
   const definition: Browser.scripting.RegisteredContentScript = {
     id: UNIVERSAL_SCRIPT_ID,
-    matches: [
-      ...UNIVERSAL_HOST_ORIGINS,
-      ...(hasFilePermission ? [UNIVERSAL_FILE_ORIGIN] : []),
-    ],
+    matches,
     js: [UNIVERSAL_SCRIPT_FILE],
     runAt: 'document_start',
     allFrames: true,
-    ...(
-      isFirefoxBuild()
-        ? {}
-        : {
-            matchOriginAsFallback: true,
-            persistAcrossSessions: true,
-          }
-    ),
+    matchOriginAsFallback: true,
+    persistAcrossSessions: true,
   };
   const existing = await browser.scripting.getRegisteredContentScripts({
     ids: [UNIVERSAL_SCRIPT_ID],
@@ -53,9 +89,8 @@ export async function registerUniversalScript(tabId?: number): Promise<void> {
   if (tabId !== undefined) {
     await browser.scripting.executeScript({
       target: { tabId, allFrames: true },
-      // Firefox requires a path relative to the extension root here.
-      files: [UNIVERSAL_SCRIPT_FILE as unknown as '/universal.js'],
-      ...(isFirefoxBuild() ? {} : { injectImmediately: true }),
+      files: [UNIVERSAL_SCRIPT_PUBLIC_PATH],
+      injectImmediately: true,
     }).catch(() => undefined);
   }
 }
@@ -71,5 +106,10 @@ export async function unregisterUniversalScript(): Promise<void> {
         : [browser.tabs.sendMessage(tab.id, { type: 'universal:disable' })]
     )),
   );
+  if (isFirefoxBuild()) {
+    await firefoxRegisteredScript?.unregister();
+    firefoxRegisteredScript = null;
+    return;
+  }
   await browser.scripting.unregisterContentScripts({ ids: [UNIVERSAL_SCRIPT_ID] });
 }
