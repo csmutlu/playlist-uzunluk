@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'preact/hooks';
+import { browser } from 'wxt/browser';
 import {
   DEFAULT_SETTINGS,
   DEFAULT_SHORTCUTS,
@@ -65,8 +66,8 @@ function resumeUrl(entry: PlaylistHistoryEntry): string {
   return url.toString();
 }
 
-async function activeTab(): Promise<chrome.tabs.Tab | undefined> {
-  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+async function activeTab() {
+  const tabs = await browser.tabs.query({ active: true, currentWindow: true });
   return tabs[0];
 }
 
@@ -77,7 +78,7 @@ async function inspectCurrentSite(): Promise<{
   const tab = await activeTab();
   if (tab?.id === undefined) return {};
   try {
-    const response = await chrome.tabs.sendMessage(
+    const response = await browser.tabs.sendMessage(
       tab.id,
       { type: 'universal:site-info' },
     ) as UniversalSiteInfo | undefined;
@@ -140,8 +141,12 @@ export function App() {
       getApiKey(),
       getPlaylistHistory(),
       getSitePatternRules(),
-      chrome.permissions.contains({ origins: [...UNIVERSAL_HOST_ORIGINS] }),
-      inspectCurrentSite(),
+      browser.permissions
+        .contains({ origins: [...UNIVERSAL_HOST_ORIGINS] })
+        .catch(() => false),
+      inspectCurrentSite().catch(
+        (): Awaited<ReturnType<typeof inspectCurrentSite>> => ({}),
+      ),
     ]).then(
       ([nextSettings, nextUniversal, key, nextHistory, patternRules, hasPermission, site]) => {
         setSettings(nextSettings);
@@ -218,7 +223,7 @@ export function App() {
     if (enabled) {
       const next = { ...universal, enabled: true };
       await saveUniversalSettings(next);
-      const granted = await chrome.permissions.request({
+      const granted = await browser.permissions.request({
         origins: [...UNIVERSAL_HOST_ORIGINS],
       });
       if (!granted) {
@@ -231,7 +236,7 @@ export function App() {
       const tabId = activeTabId ?? tab?.id;
       let registered = false;
       try {
-        const response = await chrome.runtime.sendMessage({
+        const response = await browser.runtime.sendMessage({
           type: 'universal:register',
           ...(tabId === undefined ? {} : { tabId }),
         }) as { ok: boolean };
@@ -241,7 +246,7 @@ export function App() {
       }
       if (!registered) {
         await saveUniversalSettings({ ...universal, enabled: false });
-        await chrome.permissions.remove({ origins: [...UNIVERSAL_HOST_ORIGINS] });
+        await browser.permissions.remove({ origins: [...UNIVERSAL_HOST_ORIGINS] });
         setHasUniversalPermission(false);
         setStatus(ut(locale, 'permissionDenied'));
         return;
@@ -256,9 +261,9 @@ export function App() {
     const next = { ...universal, enabled: false };
     await saveUniversalSettings(next);
     try {
-      await chrome.runtime.sendMessage({ type: 'universal:unregister' });
+      await browser.runtime.sendMessage({ type: 'universal:unregister' });
     } finally {
-      await chrome.permissions.remove({ origins: [...UNIVERSAL_HOST_ORIGINS] });
+      await browser.permissions.remove({ origins: [...UNIVERSAL_HOST_ORIGINS] });
     }
     setUniversal(next);
     setHasUniversalPermission(false);
@@ -282,7 +287,7 @@ export function App() {
   }) => {
     if (activeTabId === undefined) return;
     try {
-      const info = await chrome.tabs.sendMessage(activeTabId, message) as UniversalSiteInfo;
+      const info = await browser.tabs.sendMessage(activeTabId, message) as UniversalSiteInfo;
       if (Number.isFinite(info?.speed)) {
         setCurrentSiteSpeed(info.speed);
         setStatus('');
@@ -299,7 +304,7 @@ export function App() {
     }
     let info: MediaDownloadInfo;
     try {
-      info = await chrome.tabs.sendMessage(
+      info = await browser.tabs.sendMessage(
         activeTabId,
         { type: 'universal:download-info' },
       ) as MediaDownloadInfo;
@@ -311,7 +316,7 @@ export function App() {
       setStatus(ut(locale, info.reason ?? 'unsupportedMedia'));
       return;
     }
-    const granted = await chrome.permissions.request({
+    const granted = await browser.permissions.request({
       permissions: ['downloads'],
     });
     if (!granted) {
@@ -319,7 +324,7 @@ export function App() {
       return;
     }
     try {
-      const response = await chrome.runtime.sendMessage({
+      const response = await browser.runtime.sendMessage({
         type: 'universal:download',
         url: info.url,
         ...(info.filename ? { filename: info.filename } : {}),
@@ -367,7 +372,7 @@ export function App() {
   const save = async () => {
     setStatus('');
     if (apiKey.trim()) {
-      const granted = await chrome.permissions.request({
+      const granted = await browser.permissions.request({
         origins: ['https://www.googleapis.com/*'],
       });
       if (!granted) {
@@ -1169,7 +1174,7 @@ export function App() {
         {t(locale, 'saveSettings')}
       </button>
       <footer>
-        v{chrome.runtime.getManifest().version} · {t(locale, 'noTelemetry')}
+        v{browser.runtime.getManifest().version} · {t(locale, 'noTelemetry')}
       </footer>
     </main>
   );

@@ -10,7 +10,7 @@ export default defineConfig({
     name: '__MSG_extensionName__',
     short_name: '__MSG_extensionShortName__',
     description: '__MSG_extensionDescription__',
-    version: '1.6.1',
+    version: '1.6.2',
     ...(browser === 'firefox'
       ? {
           optional_permissions: [

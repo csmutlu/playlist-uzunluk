@@ -1,3 +1,4 @@
+import { browser } from 'wxt/browser';
 import {
   INITIAL_SCAN_CHUNK,
   MUTATION_BATCH_MS,
@@ -170,7 +171,7 @@ export class ContentController {
     const previousPlaylistId = this.playlistId;
     const nextPlaylistId = getPlaylistId();
     if (previousPlaylistId && previousPlaylistId !== nextPlaylistId) {
-      void chrome.runtime.sendMessage({
+      void browser.runtime.sendMessage({
         type: 'playlist-api:cancel',
         playlistId: previousPlaylistId,
       });
@@ -266,7 +267,7 @@ export class ContentController {
     this.error = null;
     this.emit();
     try {
-      const response = (await chrome.runtime.sendMessage({
+      const response = (await browser.runtime.sendMessage({
         type: 'playlist-api:fetch',
         playlistId: this.playlistId,
         force,

@@ -2,7 +2,11 @@ import { browser } from 'wxt/browser';
 import { UNIVERSAL_FILE_ORIGIN, UNIVERSAL_HOST_ORIGINS } from './constants';
 
 const UNIVERSAL_SCRIPT_ID = 'playlist-zamani-universal';
-const UNIVERSAL_SCRIPT_FILE = '/universal.js' as const;
+const UNIVERSAL_SCRIPT_FILE = 'universal.js' as const;
+
+function isFirefoxBuild(): boolean {
+  return browser.runtime.getManifest().manifest_version === 2;
+}
 
 export async function hasUniversalHostPermission(): Promise<boolean> {
   return browser.permissions.contains({ origins: [...UNIVERSAL_HOST_ORIGINS] });
@@ -28,8 +32,14 @@ export async function registerUniversalScript(tabId?: number): Promise<void> {
     js: [UNIVERSAL_SCRIPT_FILE],
     runAt: 'document_start',
     allFrames: true,
-    matchOriginAsFallback: true,
-    persistAcrossSessions: true,
+    ...(
+      isFirefoxBuild()
+        ? {}
+        : {
+            matchOriginAsFallback: true,
+            persistAcrossSessions: true,
+          }
+    ),
   };
   const existing = await browser.scripting.getRegisteredContentScripts({
     ids: [UNIVERSAL_SCRIPT_ID],
@@ -43,8 +53,9 @@ export async function registerUniversalScript(tabId?: number): Promise<void> {
   if (tabId !== undefined) {
     await browser.scripting.executeScript({
       target: { tabId, allFrames: true },
-      files: [UNIVERSAL_SCRIPT_FILE],
-      injectImmediately: true,
+      // Firefox requires a path relative to the extension root here.
+      files: [UNIVERSAL_SCRIPT_FILE as unknown as '/universal.js'],
+      ...(isFirefoxBuild() ? {} : { injectImmediately: true }),
     }).catch(() => undefined);
   }
 }

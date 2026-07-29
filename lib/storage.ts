@@ -1,3 +1,4 @@
+import { browser } from 'wxt/browser';
 import {
   DEFAULT_SETTINGS,
   DEFAULT_UNIVERSAL_SETTINGS,
@@ -33,8 +34,10 @@ const HISTORY_KEY = 'playlistHistory';
 const UNIVERSAL_SETTINGS_KEY = 'universalSettings:v1';
 const UNIVERSAL_SITE_DATA_KEY = 'universalSiteData:v1';
 
-function storageArea(area: 'local' | 'sync'): chrome.storage.StorageArea {
-  return chrome.storage[area];
+function storageArea(area: 'local' | 'sync') {
+  // The WXT wrapper normalizes Firefox's promise-based `browser` API. The
+  // fallback keeps isolated unit tests and older Chromium test harnesses usable.
+  return browser?.storage?.[area] ?? chrome.storage[area];
 }
 
 export async function getSettings(): Promise<ExtensionSettings> {

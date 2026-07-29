@@ -33,7 +33,7 @@ export default defineUnlistedScript(async () => {
   };
   if (guardedWindow.__playlistZamaniUniversal) return;
 
-  const hostname = siteHostname().toLowerCase();
+  const hostname = siteHostname();
   const channel = crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
   const [settings, extensionSettings, siteState] = await Promise.all([
     getUniversalSettings(),

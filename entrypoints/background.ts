@@ -1,3 +1,4 @@
+import { browser } from 'wxt/browser';
 import { CACHE_TTL_MS } from '../lib/constants';
 import {
   clearPlaylistCaches,
@@ -102,7 +103,7 @@ type BackgroundResponse =
 
 async function handleMessage(message: BackgroundMessage): Promise<BackgroundResponse> {
   if (message.type === 'universal:download') {
-    const hasPermission = await chrome.permissions.contains({
+    const hasPermission = await browser.permissions.contains({
       permissions: ['downloads'],
     });
     if (!hasPermission) return { ok: false, error: 'Downloads permission missing' };
@@ -123,7 +124,7 @@ async function handleMessage(message: BackgroundMessage): Promise<BackgroundResp
     const filename = message.filename
       ? sanitizeDownloadFilename(message.filename)
       : '';
-    const downloadId = await chrome.downloads.download({
+    const downloadId = await browser.downloads.download({
       url: url.href,
       saveAs: true,
       conflictAction: 'uniquify',
@@ -155,7 +156,7 @@ async function handleMessage(message: BackgroundMessage): Promise<BackgroundResp
   }
 
   const { playlistId, force = false } = message;
-  const hasPermission = await chrome.permissions.contains({
+  const hasPermission = await browser.permissions.contains({
     origins: ['https://www.googleapis.com/*'],
   });
   if (!hasPermission) {
