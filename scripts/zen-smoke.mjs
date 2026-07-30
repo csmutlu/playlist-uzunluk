@@ -122,6 +122,26 @@ try {
     true,
     `Universal script was not registered: ${JSON.stringify(enabledState)}`,
   );
+  const popupControls = await driver.executeScript(`
+    return {
+      quickControls: document.querySelectorAll(".quick-controls").length,
+      speedPresets: document.querySelectorAll(".speed-presets button").length,
+      shortcutInputs: document.querySelectorAll(".shortcut-input").length,
+      advancedSections: document.querySelectorAll("details.shortcut-settings").length,
+      saveButtons: document.querySelectorAll("button.save").length,
+    };
+  `);
+  assert.deepEqual(
+    popupControls,
+    {
+      quickControls: 1,
+      speedPresets: 8,
+      shortcutInputs: 10,
+      advancedSections: 3,
+      saveButtons: 1,
+    },
+    `Popup controls are incomplete: ${JSON.stringify(popupControls)}`,
+  );
   await driver.navigate().refresh();
   const persistedToggle = await driver.wait(
     until.elementLocated(By.css('.universal-toggle input')),
@@ -144,6 +164,51 @@ try {
   await disabledToggle.click();
   await driver.sleep(500);
   assert.equal(await disabledToggle.isSelected(), true, 'Universal toggle did not turn back on.');
+
+  await driver.executeScript(`
+    const input = document.querySelector(".grid.three input");
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+    setter.call(input, "0.2");
+    input.dispatchEvent(new InputEvent("input", { bubbles: true }));
+  `);
+  await driver.sleep(100);
+  await driver.executeScript('document.querySelector("button.save").click()');
+  await driver.wait(
+    async () => driver.executeAsyncScript(`
+      const done = arguments[arguments.length - 1];
+      browser.storage.sync.get("universalSettings:v1").then((storage) => {
+        done(storage["universalSettings:v1"]?.speedStep === 0.2);
+      });
+    `),
+    5_000,
+  );
+  await driver.navigate().refresh();
+  const persistedSpeedStep = await driver.wait(
+    until.elementLocated(By.css('.grid.three input')),
+    10_000,
+  );
+  assert.equal(
+    await persistedSpeedStep.getAttribute('value'),
+    '0.2',
+    'Popup speed-step setting did not persist after refresh.',
+  );
+  await driver.executeScript(`
+    const input = document.querySelector(".grid.three input");
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+    setter.call(input, "0.1");
+    input.dispatchEvent(new InputEvent("input", { bubbles: true }));
+  `);
+  await driver.sleep(100);
+  await driver.executeScript('document.querySelector("button.save").click()');
+  await driver.wait(
+    async () => driver.executeAsyncScript(`
+      const done = arguments[arguments.length - 1];
+      browser.storage.sync.get("universalSettings:v1").then((storage) => {
+        done(storage["universalSettings:v1"]?.speedStep === 0.1);
+      });
+    `),
+    5_000,
+  );
 
   await driver.get(fixtureUrl);
   const media = await driver.wait(until.elementLocated(By.id('media')), 10_000);
@@ -257,9 +322,9 @@ try {
   assert.doesNotMatch(playlist.total, /^0(?:\D|$)/);
 
   console.log(
-    `${GECKO_NAME} smoke test passed: permission persisted, D shortcut and speed memory worked, `
-      + `input guard remained active, YouTube playlist calculated ${playlist.coverage} `
-      + `videos as ${playlist.total}.`,
+    `${GECKO_NAME} smoke test passed: permission, popup controls and settings persisted; `
+      + `D shortcut, speed memory and input guard worked; YouTube playlist calculated `
+      + `${playlist.coverage} videos as ${playlist.total}.`,
   );
 } finally {
   await driver.quit().catch(() => undefined);
