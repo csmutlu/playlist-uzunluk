@@ -45,8 +45,10 @@ const OVERLAY_TAG = 'playlist-zamani-speed';
 const OVERLAY_MESSAGE = 'pz:o';
 const THEATER_MESSAGE = 'pz:t';
 const SCAN_CHUNK_SIZE = 250;
-const KEY_HOLD_DELAY_MS = 300;
-const KEY_HOLD_REPEAT_MS = 40;
+const KEY_HOLD_DELAY_MS = 450;
+const KEY_HOLD_REPEAT_MS = 120;
+const BUFFER_RECOVERY_RATE = 1;
+const BUFFER_RECOVERY_MIN_SPEED = 1.25;
 const REPEATABLE_ACTIONS = new Set<CustomShortcutAction>([
   'slower',
   'faster',
@@ -166,6 +168,26 @@ function overlayText(rate: number): string {
   return `${Number(rate.toFixed(2))}×`;
 }
 
+function bufferedSecondsAhead(media: HTMLMediaElement): number {
+  const currentTime = media.currentTime;
+  for (let index = media.buffered.length - 1; index >= 0; index -= 1) {
+    const start = media.buffered.start(index);
+    const end = media.buffered.end(index);
+    if (start <= currentTime + 0.25 && end >= currentTime) {
+      return Math.max(0, end - currentTime);
+    }
+  }
+  return 0;
+}
+
+function recoveryBufferGoal(media: HTMLMediaElement, rate: number): number {
+  const normalGoal = Math.min(12, Math.max(5, rate * 4));
+  const remaining = media.duration - media.currentTime;
+  return Number.isFinite(remaining)
+    ? Math.min(normalGoal, Math.max(0, remaining))
+    : normalGoal;
+}
+
 export class UniversalMediaController {
   private readonly channel: string;
   private readonly hostname: string;
@@ -184,6 +206,7 @@ export class UniversalMediaController {
   private speedsBeforeToggle = new WeakMap<HTMLMediaElement, number>();
   private appliedRates = new WeakMap<HTMLMediaElement, number>();
   private settingRate = new WeakSet<HTMLMediaElement>();
+  private recoveringMedia = new WeakSet<HTMLMediaElement>();
   private visibleAreas = new WeakMap<HTMLMediaElement, number>();
   private visibilityObserver: IntersectionObserver | null = null;
   private observedRoots = new Map<Node, MutationObserver>();
@@ -462,7 +485,7 @@ export class UniversalMediaController {
       return;
     }
     const selected = this.selectedMedia();
-    if (selected) {
+    if (selected && !this.recoveringMedia.has(selected)) {
       this.applyRate(selected, this.desiredSpeed, false);
       this.refreshOverlayVisibility();
     }
@@ -477,7 +500,17 @@ export class UniversalMediaController {
     media.addEventListener('pointerdown', this.handleDirectMediaActivity, { passive: true });
     media.addEventListener('ratechange', this.handleRateChange, { passive: true });
     media.addEventListener('loadedmetadata', this.handleLoadedMetadata, { passive: true });
-    if (media.readyState > 0 && this.selectedMedia() === media) {
+    media.addEventListener('waiting', this.handleBuffering, { passive: true });
+    media.addEventListener('stalled', this.handleBuffering, { passive: true });
+    media.addEventListener('canplay', this.handleBufferReady, { passive: true });
+    media.addEventListener('playing', this.handleBufferReady, { passive: true });
+    media.addEventListener('progress', this.handleBufferReady, { passive: true });
+    media.addEventListener('timeupdate', this.handleBufferReady, { passive: true });
+    if (
+      media.readyState > 0 &&
+      this.selectedMedia() === media &&
+      !this.recoveringMedia.has(media)
+    ) {
       this.applyRate(media, this.desiredSpeed, false);
       this.refreshOverlayVisibility();
     }
@@ -493,6 +526,12 @@ export class UniversalMediaController {
     media.removeEventListener('pointerdown', this.handleDirectMediaActivity);
     media.removeEventListener('ratechange', this.handleRateChange);
     media.removeEventListener('loadedmetadata', this.handleLoadedMetadata);
+    media.removeEventListener('waiting', this.handleBuffering);
+    media.removeEventListener('stalled', this.handleBuffering);
+    media.removeEventListener('canplay', this.handleBufferReady);
+    media.removeEventListener('playing', this.handleBufferReady);
+    media.removeEventListener('progress', this.handleBufferReady);
+    media.removeEventListener('timeupdate', this.handleBufferReady);
   }
 
   private handleMediaActivity = (event: Event): void => {
@@ -501,7 +540,9 @@ export class UniversalMediaController {
     if (this.lastInteracted !== media) this.overlayPositionDirty = true;
     this.lastInteracted = media;
     this.trackMedia(media);
-    if (event.type === 'play') this.applyRate(media, this.desiredSpeed, false);
+    if (event.type === 'play' && !this.recoveringMedia.has(media)) {
+      this.applyRate(media, this.desiredSpeed, false);
+    }
   };
 
   private handlePagePointer = (event: PointerEvent): void => {
@@ -518,19 +559,59 @@ export class UniversalMediaController {
     if (!media) return;
     if (this.lastInteracted !== media) this.overlayPositionDirty = true;
     this.lastInteracted = media;
-    if (event.type === 'play') this.applyRate(media, this.desiredSpeed, false);
+    if (event.type === 'play' && !this.recoveringMedia.has(media)) {
+      this.applyRate(media, this.desiredSpeed, false);
+    }
   };
 
   private handleLoadedMetadata = (event: Event): void => {
     const media = mediaFromTarget(event.currentTarget);
-    if (media && this.selectedMedia() === media) {
+    if (
+      media &&
+      this.selectedMedia() === media &&
+      !this.recoveringMedia.has(media)
+    ) {
       this.applyRate(media, this.desiredSpeed, false);
     }
+  };
+
+  private handleBuffering = (event: Event): void => {
+    const media = mediaFromTarget(event.currentTarget);
+    if (
+      !media ||
+      media.ended ||
+      this.selectedMedia() !== media ||
+      media.duration === Number.POSITIVE_INFINITY ||
+      this.desiredSpeed < BUFFER_RECOVERY_MIN_SPEED
+    ) return;
+    const goal = recoveryBufferGoal(media, this.desiredSpeed);
+    if (event.type === 'stalled' && bufferedSecondsAhead(media) >= goal) return;
+    if (this.recoveringMedia.has(media)) return;
+    this.recoveringMedia.add(media);
+    this.applyRate(media, BUFFER_RECOVERY_RATE, false);
+    this.showOverlay(this.desiredSpeed, '⏳');
+  };
+
+  private handleBufferReady = (event: Event): void => {
+    const media = mediaFromTarget(event.currentTarget);
+    if (
+      !media ||
+      !this.recoveringMedia.has(media) ||
+      media.paused ||
+      media.ended ||
+      media.readyState < HTMLMediaElement.HAVE_FUTURE_DATA
+    ) return;
+    const goal = recoveryBufferGoal(media, this.desiredSpeed);
+    if (bufferedSecondsAhead(media) + 0.25 < goal) return;
+    this.recoveringMedia.delete(media);
+    this.applyRate(media, this.desiredSpeed, false);
+    this.showOverlay(this.desiredSpeed);
   };
 
   private handleRateChange = (event: Event): void => {
     const media = mediaFromTarget(event.currentTarget);
     if (!media || this.settingRate.has(media)) return;
+    this.recoveringMedia.delete(media);
     this.reconcileExternalRate(media.playbackRate, media, media);
   };
 
@@ -901,7 +982,10 @@ export class UniversalMediaController {
     const next = clampUniversalSpeed(rate);
     this.protectRateUntil = performance.now() + 8_000;
     this.acceptSpeed(next);
-    if (media) this.applyRate(media, next, true);
+    if (media) {
+      this.recoveringMedia.delete(media);
+      this.applyRate(media, next, true);
+    }
     else this.dispatchBridge({ action: 'rate', rate: next });
     this.showOverlay(next);
   }

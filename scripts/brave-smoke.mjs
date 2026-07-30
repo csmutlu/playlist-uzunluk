@@ -254,6 +254,54 @@ try {
     'Direct HTML5 media must be exposed to the popup download action',
   );
 
+  await worker.evaluate(async () => {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab?.id === undefined) throw new Error('Fixture tab was not found');
+    await chrome.tabs.sendMessage(tab.id, {
+      type: 'universal:set-speed',
+      speed: 1.5,
+    });
+  });
+  await page.locator('#universal-speed-fixture').evaluate((video) => {
+    globalThis.__bufferEnd = 31;
+    Object.defineProperties(video, {
+      currentTime: { configurable: true, writable: true, value: 30 },
+      duration: { configurable: true, value: 120 },
+      paused: { configurable: true, value: false },
+      readyState: {
+        configurable: true,
+        value: HTMLMediaElement.HAVE_ENOUGH_DATA,
+      },
+      buffered: {
+        configurable: true,
+        value: {
+          get length() {
+            return 1;
+          },
+          start: () => 0,
+          end: () => globalThis.__bufferEnd,
+        },
+      },
+    });
+    video.dispatchEvent(new Event('waiting'));
+  });
+  assert.deepEqual(
+    await page.locator('#universal-speed-fixture').evaluate((video) => ({
+      rate: video.playbackRate,
+      time: video.currentTime,
+    })),
+    { rate: 1, time: 30 },
+    'A starved VOD must temporarily rebuild its buffer at 1x without seeking',
+  );
+  await worker.evaluate(async () => {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab?.id === undefined) throw new Error('Fixture tab was not found');
+    await chrome.tabs.sendMessage(tab.id, {
+      type: 'universal:set-speed',
+      speed: 1,
+    });
+  });
+
   await page.evaluate(() => {
     globalThis.__youtubeNativeTheater = 0;
     document.addEventListener('keydown', (event) => {

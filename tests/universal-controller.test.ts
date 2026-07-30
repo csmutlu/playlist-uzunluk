@@ -158,6 +158,78 @@ describe('UniversalMediaController', () => {
     controller.dispose();
   });
 
+  it('temporarily uses 1x to rebuild a VOD buffer without changing currentTime', async () => {
+    const video = document.createElement('video');
+    let bufferedEnd = 31;
+    Object.defineProperties(video, {
+      currentTime: { configurable: true, writable: true, value: 30 },
+      duration: { configurable: true, value: 120 },
+      paused: { configurable: true, value: false },
+      readyState: {
+        configurable: true,
+        value: HTMLMediaElement.HAVE_ENOUGH_DATA,
+      },
+      buffered: {
+        configurable: true,
+        value: {
+          get length() {
+            return 1;
+          },
+          start: () => 0,
+          end: () => bufferedEnd,
+        },
+      },
+    });
+    document.body.append(video);
+    const controller = new UniversalMediaController({
+      channel: 'buffer-recovery',
+      hostname: 'example.com',
+      settings: { ...DEFAULT_UNIVERSAL_SETTINGS, enabled: true },
+      extensionSettings: { ...DEFAULT_SETTINGS, defaultSpeed: 1.5 },
+      rule: null,
+      rememberedSpeed: null,
+      saveSpeed: async () => undefined,
+    });
+    controller.start();
+    await settleDiscovery();
+    expect(video.playbackRate).toBe(1.5);
+
+    video.dispatchEvent(new Event('waiting'));
+    expect(video.playbackRate).toBe(1);
+    expect(video.currentTime).toBe(30);
+    expect(controller.siteInfo().speed).toBe(1.5);
+
+    bufferedEnd = 40;
+    video.dispatchEvent(new Event('progress'));
+    expect(video.playbackRate).toBe(1.5);
+    expect(video.currentTime).toBe(30);
+    controller.dispose();
+  });
+
+  it('does not apply VOD buffer recovery to live streams', async () => {
+    const video = document.createElement('video');
+    Object.defineProperties(video, {
+      duration: { configurable: true, value: Number.POSITIVE_INFINITY },
+      paused: { configurable: true, value: false },
+    });
+    document.body.append(video);
+    const controller = new UniversalMediaController({
+      channel: 'live-buffer',
+      hostname: 'example.com',
+      settings: { ...DEFAULT_UNIVERSAL_SETTINGS, enabled: true },
+      extensionSettings: { ...DEFAULT_SETTINGS, defaultSpeed: 1.5 },
+      rule: null,
+      rememberedSpeed: null,
+      saveSpeed: async () => undefined,
+    });
+    controller.start();
+    await settleDiscovery();
+
+    video.dispatchEvent(new Event('waiting'));
+    expect(video.playbackRate).toBe(1.5);
+    controller.dispose();
+  });
+
   it('keeps flash mode dimmed and interactive instead of removing the overlay', async () => {
     const video = document.createElement('video');
     video.style.cssText = 'display:block;width:640px;height:360px';
