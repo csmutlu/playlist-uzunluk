@@ -42,6 +42,7 @@ interface IdleDeadlineLike {
 type IdleCallback = (deadline: IdleDeadlineLike) => void;
 
 const OVERLAY_TAG = 'playlist-zamani-speed';
+const OVERLAY_MESSAGE = 'pz:o';
 const THEATER_MESSAGE = 'pz:t';
 const SCAN_CHUNK_SIZE = 250;
 const KEY_HOLD_DELAY_MS = 300;
@@ -197,6 +198,7 @@ export class UniversalMediaController {
   private overlayValue: HTMLElement | null = null;
   private overlayStyle: HTMLStyleElement | null = null;
   private overlayVisibilityOverride: boolean | null = null;
+  private overlaySuppressed = false;
   private overlayDragged = false;
   private overlayAnchor: HTMLMediaElement | null = null;
   private overlayPositionDirty = true;
@@ -635,6 +637,7 @@ export class UniversalMediaController {
     if (action === 'toggleIndicator') {
       const currentlyVisible = this.overlayHost?.style.pointerEvents === 'auto';
       this.overlayVisibilityOverride = !currentlyVisible;
+      if (this.overlayVisibilityOverride) this.claimOverlay();
       this.refreshOverlayVisibility();
       return;
     }
@@ -802,6 +805,14 @@ export class UniversalMediaController {
   }
 
   private handleTheaterMessage = (event: MessageEvent): void => {
+    if (event.data === OVERLAY_MESSAGE) {
+      this.overlaySuppressed = true;
+      this.removeOverlay();
+      if (this.relayOverlay(event.source) && window.parent !== window) {
+        window.parent.postMessage(OVERLAY_MESSAGE, '*');
+      }
+      return;
+    }
     const data = event.data as { type?: unknown; action?: unknown } | null;
     if (
       !data ||
@@ -830,6 +841,22 @@ export class UniversalMediaController {
     if (this.theaterState?.source !== event.source) return;
     this.exitTheater(true);
   };
+
+  private relayOverlay(except: MessageEventSource | null = null): boolean {
+    let found = false;
+    for (let index = 0; index < window.frames.length; index += 1) {
+      const child = window.frames[index];
+      if (child === except) found = true;
+      else child?.postMessage(OVERLAY_MESSAGE, '*');
+    }
+    return found;
+  }
+
+  private claimOverlay(): void {
+    this.overlaySuppressed = false;
+    this.relayOverlay();
+    if (window.parent !== window) window.parent.postMessage(OVERLAY_MESSAGE, '*');
+  }
 
   downloadInfo() {
     return mediaDownloadInfo(this.selectedMedia(), document.title);
@@ -1118,6 +1145,7 @@ export class UniversalMediaController {
         this.overlayVisibilityOverride !== true
       )
     ) return;
+    this.claimOverlay();
     this.ensureOverlay();
     if (!this.overlayHost || !this.overlayValue) return;
     this.positionOverlay();
@@ -1142,10 +1170,18 @@ export class UniversalMediaController {
         this.settings.indicatorMode === 'hidden' &&
         this.overlayVisibilityOverride !== true
       ) ||
+      this.overlaySuppressed ||
       document.visibilityState === 'hidden'
     ) {
       this.hideOverlay();
       return;
+    }
+    if (!this.overlayHost) {
+      if (
+        (window.parent !== window && this.overlayVisibilityOverride !== true) ||
+        !this.selectedMedia()
+      ) return;
+      this.claimOverlay();
     }
     this.ensureOverlay();
     if (!this.overlayHost || !this.overlayValue) return;

@@ -153,6 +153,12 @@ try {
     1,
     'The universal speed indicator should mount once',
   );
+  assert.equal(
+    await page.frameLocator('#cross-origin-player').locator('playlist-zamani-speed').count(),
+    0,
+    'An inactive nested player must not mount a second speed indicator',
+  );
+  await page.waitForTimeout(150);
   const speedIndicator = page.locator('playlist-zamani-speed');
   const [videoBox, indicatorBox] = await Promise.all([
     page.locator('#universal-speed-fixture').boundingBox(),
@@ -162,7 +168,10 @@ try {
   assert(
     Math.abs(indicatorBox.x - (videoBox.x + 10)) <= 2 &&
       Math.abs(indicatorBox.y - (videoBox.y + 10)) <= 2,
-    'The speed indicator must stay at the video top-left by default',
+    `The speed indicator must stay at the video top-left by default: ${JSON.stringify({
+      videoBox,
+      indicatorBox,
+    })}`,
   );
   await page.waitForTimeout(1_300);
   const idleOpacity = Number(await speedIndicator.evaluate((element) => element.style.opacity));
@@ -272,8 +281,8 @@ try {
   await frameVideo.focus();
   await frameVideo.press('t');
   const frameTheaterBox = await page.locator('#cross-origin-player').boundingBox();
-  const [parentIndicatorOpacity, frameIndicatorOpacity] = await Promise.all([
-    page.locator('playlist-zamani-speed').evaluate((indicator) => Number(indicator.style.opacity)),
+  const [parentIndicatorCount, frameIndicatorOpacity] = await Promise.all([
+    page.locator('playlist-zamani-speed').count(),
     page.frameLocator('#cross-origin-player').locator('playlist-zamani-speed')
       .evaluate((indicator) => Number(indicator.style.opacity)),
   ]);
@@ -286,9 +295,9 @@ try {
     'T inside a cross-origin player must promote its iframe to the tab viewport',
   );
   assert.equal(
-    parentIndicatorOpacity,
+    parentIndicatorCount,
     0,
-    'Parent-frame indicators must hide while the nested player owns theater mode',
+    'The parent-frame indicator must be removed while the nested player owns the overlay',
   );
   assert(
     frameIndicatorOpacity > 0,
@@ -342,7 +351,7 @@ try {
   assert.equal(await popup.locator('.playlist-item .continue').count(), 1);
 
   console.log(
-    'Brave smoke test passed: held D/S, 16x clamp, window/iframe/closed-shadow theater mode, persistent indicator, direct-media detection, input guard and Playlistlerim.',
+    'Brave smoke test passed: single cross-frame indicator, held D/S, 16x clamp, window/iframe/closed-shadow theater mode, direct-media detection, input guard and Playlistlerim.',
   );
 } finally {
   await context?.close();

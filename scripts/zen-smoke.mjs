@@ -33,6 +33,24 @@ const fixture = `<!doctype html>
       style="display:block;width:800px;height:450px;background:#222"
     ></video>
     <input id="guard" value="typing must not change speed">
+    <iframe
+      id="nested-player"
+      src="/frame"
+      style="display:block;width:480px;height:270px;border:0"
+    ></iframe>
+  </body>
+</html>`;
+
+const frameFixture = `<!doctype html>
+<html>
+  <body style="margin:0;background:#111">
+    <video
+      id="frame-media"
+      src="/fixture.mov"
+      muted
+      preload="auto"
+      style="display:block;width:100%;height:100%;background:#222"
+    ></video>
   </body>
 </html>`;
 
@@ -43,6 +61,11 @@ const server = createServer((request, response) => {
       'content-type': 'video/quicktime',
     });
     response.end(fixtureMedia);
+    return;
+  }
+  if (request.url === '/frame') {
+    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    response.end(frameFixture);
     return;
   }
   response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
@@ -243,6 +266,15 @@ try {
       fixtureState,
     })}`,
   );
+  assert.equal(fixtureState.overlay, true, 'The active top player did not show its indicator.');
+  const nestedPlayer = await driver.findElement(By.id('nested-player'));
+  await driver.switchTo().frame(nestedPlayer);
+  assert.equal(
+    await driver.findElements(By.css('playlist-zamani-speed')).then((items) => items.length),
+    0,
+    'An inactive nested player showed a duplicate indicator.',
+  );
+  await driver.switchTo().defaultContent();
 
   await driver.sleep(900);
   await driver.navigate().refresh();
@@ -305,6 +337,26 @@ try {
   );
   assert.equal(guardedRate, 1.1, 'Typing in an input changed playback speed.');
 
+  const refreshedMedia = await driver.findElement(By.id('media'));
+  await refreshedMedia.click();
+  await driver.actions().sendKeys('d').perform();
+  const refreshedFrame = await driver.findElement(By.id('nested-player'));
+  await driver.switchTo().frame(refreshedFrame);
+  const frameMedia = await driver.wait(until.elementLocated(By.id('frame-media')), 10_000);
+  await frameMedia.click();
+  await driver.actions().sendKeys('d').perform();
+  assert.equal(
+    await driver.findElements(By.css('playlist-zamani-speed')).then((items) => items.length),
+    1,
+    'The active nested player did not own exactly one indicator.',
+  );
+  await driver.switchTo().defaultContent();
+  await driver.wait(
+    async () => driver.findElements(By.css('playlist-zamani-speed'))
+      .then((items) => items.length === 0),
+    5_000,
+  );
+
   await driver.get(PLAYLIST_URL);
   const playlist = await driver.wait(
     async () => driver.executeScript(`
@@ -323,7 +375,8 @@ try {
 
   console.log(
     `${GECKO_NAME} smoke test passed: permission, popup controls and settings persisted; `
-      + `D shortcut, speed memory and input guard worked; YouTube playlist calculated `
+      + `one cross-frame indicator, D shortcut, speed memory and input guard worked; `
+      + `YouTube playlist calculated `
       + `${playlist.coverage} videos as ${playlist.total}.`,
   );
 } finally {
