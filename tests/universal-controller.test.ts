@@ -234,6 +234,56 @@ describe('UniversalMediaController', () => {
     controller.dispose();
   });
 
+  it('leaves plain T to YouTube and allows a rebound extension theater key', async () => {
+    const player = document.createElement('div');
+    player.style.position = 'relative';
+    const video = document.createElement('video');
+    player.append(video);
+    const videoRect = { width: 640, height: 360 } as DOMRect;
+    vi.spyOn(video, 'getBoundingClientRect').mockReturnValue(videoRect);
+    vi.spyOn(player, 'getBoundingClientRect').mockReturnValue(videoRect);
+    document.body.append(player);
+    const controller = new UniversalMediaController({
+      channel: 'youtube-theater',
+      hostname: 'www.youtube.com',
+      settings: { ...DEFAULT_UNIVERSAL_SETTINGS, enabled: true },
+      extensionSettings: DEFAULT_SETTINGS,
+      rule: null,
+      rememberedSpeed: null,
+      saveSpeed: async () => undefined,
+    });
+    controller.start();
+    await settleDiscovery();
+
+    const nativeEvent = new KeyboardEvent('keydown', {
+      code: 'KeyT',
+      cancelable: true,
+    });
+    window.dispatchEvent(nativeEvent);
+    expect(nativeEvent.defaultPrevented).toBe(false);
+    expect(player.style.position).toBe('relative');
+
+    controller.update(
+      {
+        ...DEFAULT_UNIVERSAL_SETTINGS,
+        enabled: true,
+        shortcuts: {
+          ...DEFAULT_UNIVERSAL_SETTINGS.shortcuts,
+          theater: {
+            ...DEFAULT_UNIVERSAL_SETTINGS.shortcuts.theater,
+            code: 'KeyY',
+          },
+        },
+      },
+      DEFAULT_SETTINGS,
+      null,
+      null,
+    );
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyY' }));
+    expect(player.style.getPropertyValue('position')).toBe('fixed');
+    controller.dispose();
+  });
+
   it('promotes a focused cross-frame player and restores it on the relayed exit', async () => {
     const backgroundVideo = document.createElement('video');
     const frame = document.createElement('iframe');

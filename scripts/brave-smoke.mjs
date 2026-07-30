@@ -254,7 +254,45 @@ try {
     'Direct HTML5 media must be exposed to the popup download action',
   );
 
+  await page.evaluate(() => {
+    globalThis.__youtubeNativeTheater = 0;
+    document.addEventListener('keydown', (event) => {
+      if (event.code === 'KeyT') globalThis.__youtubeNativeTheater += 1;
+    });
+  });
   await page.keyboard.press('t');
+  assert.equal(
+    await page.evaluate(() => globalThis.__youtubeNativeTheater),
+    1,
+    'Plain T must reach YouTube instead of being captured by the extension',
+  );
+  assert.equal(
+    await page.locator('#universal-player-fixture').evaluate((player) => player.style.position),
+    'relative',
+    'Plain T on YouTube must not enter extension theater mode',
+  );
+  await worker.evaluate(async () => {
+    const key = 'universalSettings:v1';
+    const stored = (await chrome.storage.sync.get(key))[key] ?? {};
+    await chrome.storage.sync.set({
+      [key]: {
+        ...stored,
+        shortcuts: {
+          ...(stored.shortcuts ?? {}),
+          theater: {
+            code: 'KeyY',
+            alt: false,
+            ctrl: false,
+            meta: false,
+            shift: false,
+          },
+        },
+      },
+    });
+  });
+  await page.waitForTimeout(150);
+
+  await page.keyboard.press('y');
   const theaterBox = await page.locator('#universal-player-fixture').boundingBox();
   const viewport = page.viewportSize();
   assert(theaterBox && viewport, 'Theater player and viewport must have visible bounds');
@@ -270,7 +308,7 @@ try {
     null,
     'Window theater must not use the Fullscreen API',
   );
-  await page.keyboard.press('t');
+  await page.keyboard.press('y');
   assert.equal(
     await page.locator('#universal-player-fixture').evaluate((player) => player.style.position),
     'relative',
@@ -279,7 +317,7 @@ try {
 
   const frameVideo = page.frameLocator('#cross-origin-player').locator('#frame-video');
   await frameVideo.focus();
-  await frameVideo.press('t');
+  await frameVideo.press('y');
   const frameTheaterBox = await page.locator('#cross-origin-player').boundingBox();
   const [parentIndicatorCount, frameIndicatorOpacity] = await Promise.all([
     page.locator('playlist-zamani-speed').count(),
@@ -303,7 +341,7 @@ try {
     frameIndicatorOpacity > 0,
     'Only the active nested player indicator should remain visible',
   );
-  await frameVideo.press('t');
+  await frameVideo.press('y');
   assert.equal(
     await page.locator('#cross-origin-player').evaluate((frame) => frame.style.width),
     '560px',
@@ -321,7 +359,7 @@ try {
     globalThis.__closedTheaterVideo = video;
   });
   await page.waitForTimeout(150);
-  await page.keyboard.press('t');
+  await page.keyboard.press('y');
   const closedTheater = await page.evaluate(() => {
     const video = globalThis.__closedTheaterVideo;
     const rect = video.getBoundingClientRect();
@@ -337,7 +375,7 @@ try {
       !closedTheater.fullscreen,
     'T must support media created inside a closed Shadow DOM',
   );
-  await page.keyboard.press('t');
+  await page.keyboard.press('y');
   assert.equal(
     await page.evaluate(() => globalThis.__closedTheaterVideo.style.width),
     '320px',
@@ -351,7 +389,7 @@ try {
   assert.equal(await popup.locator('.playlist-item .continue').count(), 1);
 
   console.log(
-    'Brave smoke test passed: single cross-frame indicator, held D/S, 16x clamp, window/iframe/closed-shadow theater mode, direct-media detection, input guard and Playlistlerim.',
+    'Brave smoke test passed: native YouTube T, rebound extension theater key, single cross-frame indicator, held D/S, 16x clamp, iframe/closed-shadow theater mode, input guard and Playlistlerim.',
   );
 } finally {
   await context?.close();

@@ -582,6 +582,18 @@ export class UniversalMediaController {
     if (event.defaultPrevented || isEditableTarget(event.target)) return;
     const command = commandForKeyboardEvent(event, this.settings);
     if (!command) return;
+    if (
+      command.action === 'theater' &&
+      event.code === 'KeyT' &&
+      !event.altKey &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      !event.shiftKey &&
+      (
+        this.hostname === 'youtube.com' ||
+        this.hostname.endsWith('.youtube.com')
+      )
+    ) return;
     if (this.settings.exclusiveKeys) {
       event.preventDefault();
       event.stopPropagation();

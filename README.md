@@ -212,6 +212,11 @@ yeniden basınca oynatıcı önceki yerine, boyutuna ve stillerine döner.
 Bu özellik normal oynatıcı, iframe ve Shadow DOM içindeki oynatıcılar için
 tasarlanmıştır. Sitenin kendi tam ekran düğmesinden bağımsızdır.
 
+YouTube’da düz `T` tuşu YouTube’un kendi sinema modu için serbest bırakılır.
+Playlist Zamanı’nın sekme içi sinema modunu YouTube’da da kullanmak isterseniz
+popup’taki kısayol düzenleyiciden bu işleme `Y`, `Shift+T` veya başka bir tuş
+atayabilirsiniz. Diğer sitelerde varsayılan `T` davranışı değişmez.
+
 ### Hızı zorla sıfırlayan siteler
 
 Bazı canlı yayın ve platform oynatıcıları hızı tekrar `1x` yapabilir.
@@ -236,7 +241,7 @@ geri uygulanır; sürekli çalışan bir kontrol döngüsü kullanılmaz.
 | `X` | 10 saniye ileri sar |
 | `M` | Mevcut konumu işaretle |
 | `J` | İşaretlenen konuma dön |
-| `T` | Sekme içi sinema modunu aç/kapat |
+| `T` | Sekme içi sinema modunu aç/kapat; YouTube’da sitenin kendi `T` işlevine bırakılır |
 | `V` | Hız rozetini göster/gizle |
 
 Kısayol düzenleyiciden oynat/duraklat, sessize al, ses artır/azalt gibi işlemler
