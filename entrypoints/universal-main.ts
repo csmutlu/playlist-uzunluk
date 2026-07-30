@@ -146,7 +146,7 @@ export default defineUnlistedScript(() => {
 
   const handleControl = (event: Event) => {
     const custom = event as CustomEvent<Record<string, unknown>>;
-    if (custom.detail?.action === 'dispose') {
+    if (custom.detail?.x) {
       cleanup();
       return;
     }

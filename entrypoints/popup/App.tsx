@@ -223,7 +223,10 @@ export function App() {
     if (enabled) {
       const next = { ...universal, enabled: true };
       await saveUniversalSettings(next);
-      const granted = await browser.permissions.request({
+      const alreadyGranted = await browser.permissions
+        .contains({ origins: [...UNIVERSAL_HOST_ORIGINS] })
+        .catch(() => false);
+      const granted = alreadyGranted || await browser.permissions.request({
         origins: [...UNIVERSAL_HOST_ORIGINS],
       });
       if (!granted) {
@@ -264,13 +267,19 @@ export function App() {
 
     const next = { ...universal, enabled: false };
     await saveUniversalSettings(next);
+    let permissionStillGranted = false;
     try {
       await browser.runtime.sendMessage({ type: 'universal:unregister' });
     } finally {
-      await browser.permissions.remove({ origins: [...UNIVERSAL_HOST_ORIGINS] });
+      const removed = await browser.permissions
+        .remove({ origins: [...UNIVERSAL_HOST_ORIGINS] })
+        .catch(() => false);
+      permissionStillGranted = !removed && await browser.permissions
+        .contains({ origins: [...UNIVERSAL_HOST_ORIGINS] })
+        .catch(() => false);
     }
     setUniversal(next);
-    setHasUniversalPermission(false);
+    setHasUniversalPermission(permissionStillGranted);
     setStatus(ut(locale, 'disabled'));
   };
 

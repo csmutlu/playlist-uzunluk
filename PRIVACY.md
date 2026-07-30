@@ -22,15 +22,19 @@ ve ilerleme dışa aktarımına eklenmez.
 
 ## Evrensel hız kontrolü
 
-Bu özellik varsayılan olarak kapalıdır. Kullanıcı popup içinden etkinleştirdiğinde
-tarayıcı `http` ve `https` siteleri için isteğe bağlı izin ister. Eklenti sayfadaki
+Bu özellik varsayılan olarak kapalıdır. Chromium paketinde kullanıcı popup içinden
+etkinleştirdiğinde tarayıcı `http` ve `https` siteleri için isteğe bağlı izin ister.
+Firefox/Zen geçici MV2 paketinde aynı erişim kurulum sırasında verilir; bu, Gecko’da
+etkinleştirme durumunun F5 sonrasında güvenilir kalmasını sağlar. Eklenti sayfadaki
 HTML5 video ve ses öğelerini yalnızca yerel olarak denetler; medya içeriğini okumaz,
-indirmez veya başka bir sunucuya göndermez. İzin popup içinden kapatıldığında
-dinamik içerik betikleri ve geniş site izni kaldırılır.
+indirmez veya başka bir sunucuya göndermez. Özellik popup içinden kapatıldığında
+Chromium dinamik içerik betiğini ve isteğe bağlı erişimi kaldırır; Firefox/Zen ise
+manifest iznini koruyup denetleyiciyi durdurur.
 
-Manifestteki isteğe bağlı `file:///*` izni yalnızca kullanıcının tarayıcı eklenti
-ayrıntılarında yerel dosya erişimini ayrıca açması halinde yerel video/ses
-dosyalarını kontrol etmek için kullanılır.
+Chromium manifestindeki isteğe bağlı `file:///*` izni yalnızca kullanıcının tarayıcı
+eklenti ayrıntılarında yerel dosya erişimini ayrıca açması halinde kullanılır.
+Firefox/Zen paketinde bu izin Gecko uyumluluğu için kurulum izinleri arasındadır;
+evrensel denetleyici kapalıyken yerel dosyalarda da çalışmaz.
 
 ## Doğrudan medya indirme
 
@@ -57,9 +61,11 @@ Uzantının kaldırılması Chrome’un uzantıya ait yerel verileri kaldırmas�
 ## İzinlerin amacı
 
 - `storage`: Ayarlar, ilerleme ve önbellek
-- `scripting`: Kullanıcı izin verdiğinde küçük evrensel hız denetleyicisini kaydetmek veya kaldırmak
+- `scripting`: Küçük evrensel hız denetleyicisini açık sekmeye uygulamak
 - `youtube.com`: Playlist süresini okuyup YouTube üzerinde kullanıcı arayüzü göstermek
-- İsteğe bağlı `http://*/*` ve `https://*/*`: Evrensel hız kontrolünü kullanıcının seçtiği sitelerde çalıştırmak
-- İsteğe bağlı `file:///*`: Kullanıcı ayrıca izin verdiğinde yerel video ve ses dosyalarını kontrol etmek
+- Chromium’da isteğe bağlı, Firefox/Zen’de kurulum sırasında verilen `http://*/*`
+  ve `https://*/*`: Evrensel hız kontrolünü kullanıcı açtığında çalıştırmak
+- Chromium’da isteğe bağlı, Firefox/Zen’de kurulum sırasında verilen `file:///*`:
+  Kullanıcı evrensel kontrolü açtığında yerel video ve ses dosyalarını kontrol etmek
 - İsteğe bağlı `downloads`: Kullanıcı istediğinde doğrudan sunulan medya dosyasını tarayıcının indirme yöneticisine kaydetmek
 - İsteğe bağlı `googleapis.com`: Kullanıcı talep ettiğinde public playlisti API ile tamamlamak

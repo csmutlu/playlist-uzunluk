@@ -1,6 +1,6 @@
 {
   "name": "playlist-zamani",
-  "version": "1.6.4",
+  "version": "1.6.5",
   "private": true,
   "type": "module",
   "description": "YouTube playlist süre asistanı ve tüm siteler için hafif video hız kontrolü.",
@@ -22,6 +22,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:brave": "npm run build && node scripts/brave-smoke.mjs",
+    "test:zen": "npm run zip:firefox && node scripts/zen-smoke.mjs",
+    "test:firefox": "npm run zip:firefox && GECKO_NAME=Firefox GECKO_BINARY=/Applications/Firefox.app/Contents/MacOS/firefox node scripts/zen-smoke.mjs",
+    "test:gecko": "npm run test:zen && npm run test:firefox",
     "test:tabii": "npm run build && node scripts/tabii-live-test.mjs",
     "test:stress": "npm run build && node scripts/universal-stress.mjs",
     "test:watch": "vitest",
@@ -37,6 +40,7 @@
     "@types/chrome": "0.1.20",
     "jsdom": "26.1.0",
     "playwright-core": "^1.54.2",
+    "selenium-webdriver": "^4.37.0",
     "typescript": "5.9.3",
     "vitest": "4.1.10",
     "wxt": "0.21.2"

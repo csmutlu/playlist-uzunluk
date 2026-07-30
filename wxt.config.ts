@@ -10,15 +10,12 @@ export default defineConfig({
     name: '__MSG_extensionName__',
     short_name: '__MSG_extensionShortName__',
     description: '__MSG_extensionDescription__',
-    version: '1.6.4',
+    version: '1.6.5',
     ...(browser === 'firefox'
       ? {
           optional_permissions: [
             'downloads',
             'https://www.googleapis.com/*',
-            'http://*/*',
-            'https://*/*',
-            'file:///*',
           ],
           web_accessible_resources: ['universal-main.js'],
           browser_specific_settings: {
@@ -47,7 +44,21 @@ export default defineConfig({
             },
           ],
         }),
-    permissions: ['storage', 'scripting'],
+    permissions: [
+      'storage',
+      'scripting',
+      ...(browser === 'firefox' ? ['http://*/*', 'https://*/*', 'file:///*'] : []),
+    ],
+    ...(browser === 'firefox'
+      ? {
+          content_scripts: [{
+            matches: ['http://*/*', 'https://*/*', 'file:///*'],
+            js: ['universal.js'],
+            run_at: 'document_start',
+            all_frames: true,
+          }],
+        }
+      : {}),
     icons: {
       16: 'icon-16.png',
       32: 'icon-32.png',

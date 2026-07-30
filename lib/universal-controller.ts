@@ -143,8 +143,9 @@ export function theaterTargetFor(media: HTMLVideoElement): HTMLElement {
 }
 
 function idleRequest(callback: IdleCallback): number {
-  const requestIdle = window.requestIdleCallback;
-  if (typeof requestIdle === 'function') return requestIdle(callback, { timeout: 200 });
+  if (typeof window.requestIdleCallback === 'function') {
+    return window.requestIdleCallback(callback, { timeout: 200 });
+  }
   return window.setTimeout(
     () => callback({ didTimeout: true, timeRemaining: () => 4 }),
     0,
@@ -152,8 +153,7 @@ function idleRequest(callback: IdleCallback): number {
 }
 
 function idleCancel(id: number): void {
-  const cancelIdle = window.cancelIdleCallback;
-  if (typeof cancelIdle === 'function') cancelIdle(id);
+  if (typeof window.cancelIdleCallback === 'function') window.cancelIdleCallback(id);
   else window.clearTimeout(id);
 }
 
@@ -874,6 +874,7 @@ export class UniversalMediaController {
       if (show) this.showOverlay(next);
       return;
     }
+    this.protectRateUntil = Math.max(this.protectRateUntil, performance.now() + 3_000);
     this.settingRate.add(media);
     this.appliedRates.set(media, next);
     try {

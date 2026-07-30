@@ -100,10 +100,16 @@ sayfasındaki **Yeniden yükle** düğmesine basın ve açık sekmeleri yenileyi
 2. `about:debugging#/runtime/this-firefox` adresini açın.
 3. **Geçici Eklenti Yükle** düğmesine basın.
 4. `.output/firefox-mv2/manifest.json` dosyasını seçin.
-5. Önceden açık video sekmelerini yenileyin.
+5. Firefox/Zen bir izin özeti gösterirse tüm site erişimini onaylayın.
+6. Önceden açık video sekmelerini yenileyin.
 
 Geçici kurulum, Firefox veya Zen kapatılana kadar geçerlidir. Kalıcı Firefox
 dağıtımı Mozilla imzası gerektirir.
+
+Firefox ve Zen’in geçici MV2 eklentilerinde sonradan istenen geniş site izni
+yenileme sonrasında güvenilir biçimde korunmadığı için bu pakette `http/https`
+erişimi kurulum sırasında bir kez verilir. Evrensel denetleyici yine varsayılan
+olarak kapalıdır; popup’taki anahtar açılmadıkça sayfalarda etkinleşmez.
 
 Hazır ZIP oluşturmak için:
 
@@ -159,16 +165,20 @@ sayısını, hızla kazanılan süreyi, tahmini bitiş saatini ve bitiş tarihin
 
 ## Her sitede hız kontrolü
 
-Evrensel kontrol varsayılan olarak geniş site izni istemez.
+Evrensel kontrol varsayılan olarak kapalıdır. Chromium paketinde geniş site izni
+yalnızca özellik açıldığında istenir. Firefox/Zen paketinde izin kurulum sırasında
+bir kez verilir; özellik açılmadıkça medya denetimi yapılmaz.
 
 1. Araç çubuğundan Playlist Zamanı popup’ını açın.
 2. **Tüm sitelerde hız kontrolünü etkinleştir** seçeneğini açın.
-3. Tarayıcının site erişimi isteğini onaylayın.
+3. Chromium’da gösterilen site erişimi isteğini onaylayın. Firefox/Zen’de bu izin
+   kurulum sırasında zaten verilmiştir.
 4. Önceden açık video sekmesini bir kez yenileyin.
 5. Videoya tıklayın ve `S`/`D` ile hızı değiştirin.
 
-İzin daha sonra kapatılabilir. Kapatıldığında evrensel betik kaydı temizlenir;
-YouTube playlist hesaplama özellikleri çalışmaya devam eder.
+Özellik daha sonra popup’tan kapatılabilir. Chromium’da dinamik betik kaydı ve
+isteğe bağlı erişim kaldırılır. Firefox/Zen’de kurulum izni manifestte kalır ancak
+denetleyici durur; YouTube playlist hesaplama özellikleri çalışmaya devam eder.
 
 ### Aktif oynatıcı nasıl seçilir?
 
@@ -296,7 +306,7 @@ doğrudan indirilebilir bir medya adresi sunmuyordur.
 | --- | --- |
 | Brave | Birincil geliştirme ve gerçek tarayıcı testleri |
 | Chrome, Edge, Opera | Chromium MV3 paketi |
-| Firefox, Zen Browser | Firefox MV2 paketi |
+| Firefox, Zen Browser | Firefox MV2 paketi; gerçek Firefox ve Zen testleri |
 | YouTube | Playlist paneli ve evrensel medya kontrolü |
 | Standart HTML5 video/ses | Tam evrensel kontrol |
 | Iframe ve Shadow DOM oynatıcıları | Erişilebildiği ölçüde destek |
@@ -365,15 +375,18 @@ ekleyerek [GitHub Issues](https://github.com/csmutlu/playlist-uzunluk/issues)
 Zorunlu izinler:
 
 - `storage`: ayarlar ve playlist ilerlemesi
-- `scripting`: isteğe bağlı evrensel betiği kaydetmek
+- `scripting`: evrensel denetleyiciyi açık sekmeye uygulamak
 - `youtube.com`: playlist paneli ve YouTube oynatıcı entegrasyonu
+- Firefox/Zen’de `http://*/*`, `https://*/*` ve `file:///*`: Gecko’nun geçici
+  MV2 eklentilerinde F5 sonrası kalıcı ve güvenilir evrensel kontrol
 
 Yalnızca ilgili özellik kullanıldığında istenen izinler:
 
-- `http://*/*` ve `https://*/*`: bütün sitelerde hız kontrolü
+- Chromium’da `http://*/*` ve `https://*/*`: bütün sitelerde hız kontrolü
 - `googleapis.com`: YouTube Data API ile eksik playlisti tamamlama
 - `downloads`: doğrudan medya dosyasını indirme
-- Yerel dosya erişimi: yalnızca tarayıcının eklenti ayarından ayrıca izin verirseniz
+- Chromium’da yerel dosya erişimi: yalnızca tarayıcının eklenti ayarından ayrıca
+  izin verirseniz
 
 Eklenti analitik, telemetri veya reklam bağlantısı kurmaz. API anahtarı yalnızca
 yerel eklenti depolamasında tutulur ve loglanmaz. Ayrıntılar için
@@ -417,20 +430,24 @@ Firefox build doğrulaması:
 npm run check:firefox
 ```
 
-Gerçek Brave senaryoları:
+Gerçek Brave, Zen ve Firefox senaryoları:
 
 ```bash
 npm run test:brave
+npm run test:gecko
 npm run test:tabii
 npm run test:stress
 ```
 
 - `test:brave`; playlist paneli, `S`/`D`, iframe/Shadow DOM `T` modu, yazı alanı
   koruması, dinamik medya ve Playlistlerim ekranını izole Brave profilinde doğrular.
+- `test:gecko`; gerçek Zen ve Firefox ikililerinde etkinleştirme, kapatma,
+  F5 sonrası ayar kalıcılığı, `D` kısayolu, site hız hafızası, yazı alanı koruması
+  ve 46 videoluk gerçek YouTube playlist hesabını doğrular.
 - `test:tabii`; Tabii TRT 1 canlı oynatıcısında hız kilidini test eder.
 - `test:stress`; 1.000 medya öğesinde paket boyutu, uzun görev ve boşta CPU bütçesini ölçer.
 
-Testler geçici profiller kullanır; kişisel Brave profiline veya tarayıcı verilerine dokunmaz.
+Testler geçici profiller kullanır; kişisel tarayıcı profillerine veya verilere dokunmaz.
 
 ## Katkı ve güvenlik
 

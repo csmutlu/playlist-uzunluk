@@ -4,24 +4,6 @@ import { UNIVERSAL_FILE_ORIGIN, UNIVERSAL_HOST_ORIGINS } from './constants';
 const UNIVERSAL_SCRIPT_ID = 'playlist-zamani-universal';
 const UNIVERSAL_SCRIPT_FILE = 'universal.js' as const;
 const UNIVERSAL_SCRIPT_PUBLIC_PATH = '/universal.js' as const;
-interface FirefoxRegisteredContentScript {
-  unregister(): Promise<void>;
-}
-
-interface FirefoxContentScriptsApi {
-  register(options: {
-    matches: string[];
-    js: Array<{ file: string }>;
-    runAt: 'document_start';
-    allFrames: boolean;
-    matchAboutBlank: boolean;
-  }): Promise<FirefoxRegisteredContentScript>;
-}
-
-const firefoxContentScripts = (
-  browser as unknown as { contentScripts: FirefoxContentScriptsApi }
-).contentScripts;
-let firefoxRegisteredScript: FirefoxRegisteredContentScript | null = null;
 
 function isFirefoxBuild(): boolean {
   return browser.runtime.getManifest().manifest_version === 2;
@@ -44,7 +26,7 @@ async function universalGrantedOrigins(): Promise<string[]> {
 }
 
 export async function isUniversalScriptRegistered(): Promise<boolean> {
-  if (isFirefoxBuild() && firefoxRegisteredScript) return true;
+  if (isFirefoxBuild()) return true;
   const scripts = await browser.scripting.getRegisteredContentScripts({
     ids: [UNIVERSAL_SCRIPT_ID],
   }).catch(() => []);
@@ -52,34 +34,7 @@ export async function isUniversalScriptRegistered(): Promise<boolean> {
 }
 
 export async function registerUniversalScript(tabId?: number): Promise<void> {
-  const hasFilePermission = await browser.permissions.contains({
-    origins: [UNIVERSAL_FILE_ORIGIN],
-  }).catch(() => false);
-  const matches = [
-    ...await universalGrantedOrigins(),
-    ...(hasFilePermission ? [UNIVERSAL_FILE_ORIGIN] : []),
-  ];
-  if (matches.length === 0) throw new Error('Host permission missing');
   if (isFirefoxBuild()) {
-    if (!(await isUniversalScriptRegistered())) {
-      try {
-        firefoxRegisteredScript = await firefoxContentScripts.register({
-          matches,
-          js: [{ file: UNIVERSAL_SCRIPT_PUBLIC_PATH }],
-          runAt: 'document_start',
-          allFrames: true,
-          matchAboutBlank: true,
-        });
-      } catch {
-        await browser.scripting.registerContentScripts([{
-          id: UNIVERSAL_SCRIPT_ID,
-          matches,
-          js: [UNIVERSAL_SCRIPT_FILE],
-          runAt: 'document_start',
-          allFrames: true,
-        }]);
-      }
-    }
     if (tabId !== undefined) {
       await browser.tabs.executeScript(tabId, {
         file: UNIVERSAL_SCRIPT_PUBLIC_PATH,
@@ -90,7 +45,14 @@ export async function registerUniversalScript(tabId?: number): Promise<void> {
     }
     return;
   }
-
+  const hasFilePermission = await browser.permissions.contains({
+    origins: [UNIVERSAL_FILE_ORIGIN],
+  }).catch(() => false);
+  const matches = [
+    ...await universalGrantedOrigins(),
+    ...(hasFilePermission ? [UNIVERSAL_FILE_ORIGIN] : []),
+  ];
+  if (matches.length === 0) throw new Error('Host permission missing');
   const definition: Browser.scripting.RegisteredContentScript = {
     id: UNIVERSAL_SCRIPT_ID,
     matches,
@@ -129,13 +91,6 @@ export async function unregisterUniversalScript(): Promise<void> {
         : [browser.tabs.sendMessage(tab.id, { type: 'universal:disable' })]
     )),
   );
-  if (isFirefoxBuild()) {
-    await firefoxRegisteredScript?.unregister();
-    firefoxRegisteredScript = null;
-    await browser.scripting
-      .unregisterContentScripts({ ids: [UNIVERSAL_SCRIPT_ID] })
-      .catch(() => undefined);
-    return;
-  }
+  if (isFirefoxBuild()) return;
   await browser.scripting.unregisterContentScripts({ ids: [UNIVERSAL_SCRIPT_ID] });
 }

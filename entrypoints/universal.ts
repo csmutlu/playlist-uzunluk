@@ -15,7 +15,7 @@ interface UniversalRuntimeGuard {
 function siteHostname(): string {
   if (location.protocol === 'file:') return 'local-files';
   try {
-    if (window.top && window.top.location.hostname) return window.top.location.hostname;
+    return top?.location.hostname || location.hostname;
   } catch {
     try {
       const referrer = new URL(document.referrer);
@@ -28,27 +28,33 @@ function siteHostname(): string {
 }
 
 export default defineUnlistedScript(async () => {
-  const guardedWindow = window as typeof window & {
+  const guardedDocument = document as typeof document & {
     __playlistZamaniUniversal?: UniversalRuntimeGuard;
   };
-  if (guardedWindow.__playlistZamaniUniversal) return;
+  if (guardedDocument.__playlistZamaniUniversal) return;
 
   const hostname = siteHostname();
-  const channel = crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
+  const channel = crypto.randomUUID();
   const [settings, extensionSettings, siteState] = await Promise.all([
     getUniversalSettings(),
     getSettings(),
     getSiteMediaState(hostname),
   ]);
+  if (!settings.enabled) return;
   let bridgeInjected = false;
   const injectBridge = async () => {
     if (bridgeInjected) return;
-    bridgeInjected = await injectScript('/universal-main.js', {
-      keepInDom: false,
-      modifyScript(script) {
-        script.dataset.pzChannel = channel;
-      },
-    }).then(() => true).catch(() => false);
+    try {
+      await injectScript('/universal-main.js', {
+        keepInDom: false,
+        modifyScript(script) {
+          script.dataset.pzChannel = channel;
+        },
+      });
+      bridgeInjected = true;
+    } catch {
+      // Some protected players reject MAIN-world injection.
+    }
   };
   const disposeBridge = () => {
     if (!bridgeInjected) return;
@@ -56,13 +62,11 @@ export default defineUnlistedScript(async () => {
     document.dispatchEvent(new CustomEvent(
       `playlist-zamani:control:${channel}`,
       {
-        detail: { action: 'dispose' },
-        bubbles: true,
-        composed: true,
+        detail: { x: true },
       },
     ));
   };
-  if (settings.enabled && siteState.rule?.enabled !== false) await injectBridge();
+  if (settings.enabled && siteState.rule?.enabled !== false) void injectBridge();
 
   const controller = new UniversalMediaController({
     channel,
@@ -77,7 +81,7 @@ export default defineUnlistedScript(async () => {
 
   let disposed = false;
   let reloadQueued = false;
-  const reload = async () => {
+  const reload = () => {
     if (disposed || reloadQueued) return;
     reloadQueued = true;
     queueMicrotask(async () => {
@@ -89,7 +93,7 @@ export default defineUnlistedScript(async () => {
         getSiteMediaState(hostname),
       ]);
       if (nextSettings.enabled && nextSiteState.rule?.enabled !== false) {
-        await injectBridge();
+        void injectBridge();
       } else {
         disposeBridge();
       }
@@ -155,10 +159,10 @@ export default defineUnlistedScript(async () => {
     disposeBridge();
     chrome.storage.onChanged.removeListener(handleStorageChange);
     chrome.runtime.onMessage.removeListener(handleMessage);
-    guardedWindow.__playlistZamaniUniversal = undefined;
+    guardedDocument.__playlistZamaniUniversal = undefined;
   };
 
-  guardedWindow.__playlistZamaniUniversal = { dispose };
+  guardedDocument.__playlistZamaniUniversal = { dispose };
   chrome.storage.onChanged.addListener(handleStorageChange);
   chrome.runtime.onMessage.addListener(handleMessage);
   window.addEventListener('pagehide', dispose, { once: true });
