@@ -10,7 +10,7 @@ const GECKO_BINARY =
   process.env.GECKO_BINARY || '/Applications/Zen.app/Contents/MacOS/zen';
 const ADDON_ID = 'playlist-zamani@local';
 const packageVersion = JSON.parse(readFileSync(resolve('package.json'), 'utf8')).version;
-const ADDON_PATH = resolve(`.output/playlist-zamani-${packageVersion}-firefox.zip`);
+const ADDON_PATH = resolve(`.output/videoexpert-${packageVersion}-firefox.zip`);
 const PLAYLIST_URL =
   'https://www.youtube.com/playlist?list=PL5kIOunpmSBMBPYmrPkd0JikOPIfQW-Sn';
 const FIXTURE_MEDIA =
@@ -152,6 +152,9 @@ try {
       shortcutInputs: document.querySelectorAll(".shortcut-input").length,
       advancedSections: document.querySelectorAll("details.shortcut-settings").length,
       saveButtons: document.querySelectorAll("button.save").length,
+      volumeMasters: document.querySelectorAll(".volume-master input[type=range][max='600']").length,
+      equalizerControls: document.querySelectorAll(".equalizer-controls input[type=range][max='100']").length,
+      audibleTabLists: document.querySelectorAll(".audible-tabs-heading").length,
     };
   `);
   assert.deepEqual(
@@ -162,6 +165,9 @@ try {
       shortcutInputs: 10,
       advancedSections: 3,
       saveButtons: 1,
+      volumeMasters: 1,
+      equalizerControls: 2,
+      audibleTabLists: 1,
     },
     `Popup controls are incomplete: ${JSON.stringify(popupControls)}`,
   );
@@ -267,6 +273,116 @@ try {
     })}`,
   );
   assert.equal(fixtureState.overlay, true, 'The active top player did not show its indicator.');
+  const mediaTabHandle = await driver.getWindowHandle();
+  await driver.switchTo().newWindow('tab');
+  const audioPopupHandle = await driver.getWindowHandle();
+  await driver.get(`moz-extension://${extensionUuid}/popup.html`);
+  const createdAudioTab = await driver.executeAsyncScript(`
+    const done = arguments[arguments.length - 1];
+    browser.tabs.create({ url: ${JSON.stringify(fixtureUrl)}, active: true })
+      .then((tab) => done({ ok: true, tabId: tab.id }))
+      .catch((error) => done({ ok: false, error: String(error) }));
+  `);
+  assert.equal(createdAudioTab.ok, true, `Could not create ${GECKO_NAME} audio fixture tab.`);
+  assert.equal(typeof createdAudioTab.tabId, 'number');
+  const audioFixtureHandle = (await driver.getAllWindowHandles())
+    .find((handle) => handle !== mediaTabHandle && handle !== audioPopupHandle);
+  assert.ok(audioFixtureHandle, `${GECKO_NAME} audio fixture WebDriver handle was not found.`);
+  await driver.switchTo().window(audioFixtureHandle);
+  const audioFixtureMedia = await driver.wait(until.elementLocated(By.id('media')), 10_000);
+  await driver.wait(
+    async () => driver.executeScript('return document.querySelector("video").readyState > 0'),
+    10_000,
+  );
+  await driver.executeScript(`
+    window.__audioGesture = [];
+    for (const type of ["pointerdown", "mousedown", "click"]) {
+      document.querySelector("video").addEventListener(type, (event) => {
+        window.__audioGesture.push({ type, trusted: event.isTrusted });
+      }, { once: true });
+    }
+  `);
+  await audioFixtureMedia.click();
+  await driver.sleep(250);
+  const audioPageState = await driver.executeScript(`
+    return {
+      userAgent: navigator.userAgent,
+      bridgeRegistry: Boolean(window.__playlistZamaniVolumeRegistry),
+      graphReady: Boolean(window.__playlistZamaniVolumeRegistry?.graphs?.has(
+        document.querySelector("video"),
+      )),
+      graphPending: Boolean(window.__playlistZamaniVolumeRegistry?.pending?.has(
+        document.querySelector("video"),
+      )),
+      graphError: window.__playlistZamaniVolumeRegistry?.lastError ?? "",
+      audioContext: typeof AudioContext,
+      mediaPaused: document.querySelector("video").paused,
+      mediaMuted: document.querySelector("video").muted,
+      gesture: window.__audioGesture,
+    };
+  `);
+  await driver.switchTo().window(audioPopupHandle);
+  const firefoxAudioProfile = await driver.executeAsyncScript(`
+    const done = arguments[arguments.length - 1];
+    const tabId = ${createdAudioTab.tabId};
+    browser.tabs.sendMessage(tabId, {
+        type: "universal:set-audio-profile",
+        settings: { percent: 225, bass: 80, voice: 50 },
+      }, { frameId: 0 }).then(async (response) => {
+      await browser.tabs.sendMessage(tabId, {
+        type: "universal:set-audio-profile",
+        settings: { percent: 100, bass: 0, voice: 0 },
+      }, { frameId: 0 });
+      await browser.tabs.remove(tabId);
+      done({ ok: true, response });
+    }).catch((error) => done({ ok: false, error: String(error) }));
+  `);
+  await driver.close();
+  await driver.switchTo().window(mediaTabHandle);
+  assert.deepEqual(
+    firefoxAudioProfile,
+    {
+      ok: true,
+      response: {
+        mediaFound: true,
+        percent: 225,
+        muted: false,
+        boosted: true,
+        boostSupported: true,
+        bass: 80,
+        voice: 50,
+      },
+    },
+    `${GECKO_NAME} page-audio fallback did not apply bass and voice filters: ${JSON.stringify(audioPageState)}`,
+  );
+  const lineWheelRate = await driver.executeScript(`
+    const overlay = document.querySelector("playlist-zamani-speed");
+    overlay.dispatchEvent(new WheelEvent("wheel", {
+      deltaY: -3,
+      deltaMode: WheelEvent.DOM_DELTA_LINE,
+      bubbles: true,
+      composed: true,
+      cancelable: true,
+    }));
+    return document.querySelector("video").playbackRate;
+  `);
+  assert.equal(
+    lineWheelRate,
+    1.2,
+    `${GECKO_NAME} line-mode wheel input did not increase speed over the indicator.`,
+  );
+  const restoredWheelRate = await driver.executeScript(`
+    const overlay = document.querySelector("playlist-zamani-speed");
+    overlay.dispatchEvent(new WheelEvent("wheel", {
+      deltaY: 3,
+      deltaMode: WheelEvent.DOM_DELTA_LINE,
+      bubbles: true,
+      composed: true,
+      cancelable: true,
+    }));
+    return document.querySelector("video").playbackRate;
+  `);
+  assert.equal(restoredWheelRate, 1.1, 'The reverse line-mode wheel tick did not restore speed.');
   const nestedPlayer = await driver.findElement(By.id('nested-player'));
   await driver.switchTo().frame(nestedPlayer);
   assert.equal(
@@ -374,8 +490,9 @@ try {
   assert.doesNotMatch(playlist.total, /^0(?:\D|$)/);
 
   console.log(
-    `${GECKO_NAME} smoke test passed: permission, popup controls and settings persisted; `
+    `${GECKO_NAME} smoke test passed: permission, popup audio controls and settings persisted; `
       + `one cross-frame indicator, D shortcut, speed memory and input guard worked; `
+      + `page-audio bass and voice filters worked; `
       + `YouTube playlist calculated `
       + `${playlist.coverage} videos as ${playlist.total}.`,
   );

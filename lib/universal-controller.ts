@@ -1,32 +1,47 @@
 import { DEFAULT_FRAME_RATE } from './constants';
+import { resolveLocale } from './i18n';
+import { handlerFor, type SiteHandler } from './site-handlers';
 import type {
   CustomShortcutAction,
   ExtensionSettings,
+  MasterVolumeInfo,
   SiteMediaRule,
   UniversalControllerSettings,
 } from './types';
 import {
   advanceLoop,
+  classifyExternalRate,
   clampUniversalSpeed,
   commandForKeyboardEvent,
   effectiveFightback,
   frameStepSeconds,
+  HOLD_INTENT_MS,
   isEditableTarget,
+  isDecorativeMedia,
   isSeekable,
+  isWheelSpeedGesture,
   loopSeekTarget,
   mediaDownloadInfo,
-  roundSpeed,
+  PRESS_SLOP_PX,
   selectMedia,
+  stepUniversalSpeed,
   type LoopMark,
   type MatchedShortcut,
 } from './universal';
+import { ut } from './universal-i18n';
 
 interface BridgeState {
-  kind: 'media' | 'rejected' | 'shadow' | 'theater';
+  kind: 'media' | 'rejected' | 'shadow' | 'theater' | 'volume';
   rate?: number;
   seekable?: boolean;
   mediaType?: 'audio' | 'video';
   active?: boolean;
+  percent?: number;
+  muted?: boolean;
+  boosted?: boolean;
+  boostSupported?: boolean;
+  bass?: number;
+  voice?: number;
 }
 
 interface UniversalControllerOptions {
@@ -220,6 +235,7 @@ export class UniversalMediaController {
   private readonly saveSpeed: (speed: number) => Promise<void>;
   private readonly controlEvent: string;
   private readonly stateEvent: string;
+  private readonly siteHandler: SiteHandler | null;
   private settings: UniversalControllerSettings;
   private extensionSettings: ExtensionSettings;
   private rule: SiteMediaRule | null;
@@ -263,8 +279,22 @@ export class UniversalMediaController {
   private loopRange: LoopMark | null = null;
   private active = false;
   private disposed = false;
-  private lastPageGestureAt = Number.NEGATIVE_INFINITY;
+  private lastKeyIntentAt = Number.NEGATIVE_INFINITY;
+  private lastClickAt = Number.NEGATIVE_INFINITY;
+  private prevClickAt = Number.NEGATIVE_INFINITY;
+  private lastPointerEndAt = Number.NEGATIVE_INFINITY;
+  private pressStartedAt: number | null = null;
+  private pressOrigin: { x: number; y: number } | null = null;
+  private pressSteady = true;
+  private overrideMedia: HTMLMediaElement | null = null;
+  private overrideActive = false;
+  private overrideRate = 0;
+  private overrideTimer: number | null = null;
   private protectRateUntil = 0;
+  private volumeStates = new WeakMap<HTMLMediaElement, MasterVolumeInfo>();
+  private bridgeVolumeState: MasterVolumeInfo | null = null;
+  private volumeRevision = 0;
+  private pendingVolumeResolvers = new Set<(info: MasterVolumeInfo) => void>();
 
   constructor(options: UniversalControllerOptions) {
     this.channel = options.channel;
@@ -276,6 +306,7 @@ export class UniversalMediaController {
     this.saveSpeed = options.saveSpeed;
     this.controlEvent = `playlist-zamani:control:${this.channel}`;
     this.stateEvent = `playlist-zamani:state:${this.channel}`;
+    this.siteHandler = handlerFor(this.hostname);
     this.desiredSpeed = this.resolveInitialSpeed();
   }
 
@@ -284,10 +315,12 @@ export class UniversalMediaController {
     this.active = true;
     window.addEventListener('keydown', this.handleKeydown, true);
     window.addEventListener('keyup', this.handleKeyup, true);
-    window.addEventListener('blur', this.clearHeldShortcut);
+    window.addEventListener('blur', this.handleWindowBlur);
     window.addEventListener('message', this.handleTheaterMessage, true);
     document.addEventListener('play', this.handleMediaActivity, true);
     document.addEventListener('pointerdown', this.handlePagePointer, true);
+    document.addEventListener('pointerup', this.handlePagePointerEnd, true);
+    document.addEventListener('pointercancel', this.handlePagePointerEnd, true);
     document.addEventListener(this.stateEvent, this.handleBridgeState as EventListener);
     document.addEventListener('visibilitychange', this.handleVisibility);
     window.addEventListener('scroll', this.handleViewportChange, { passive: true });
@@ -378,15 +411,20 @@ export class UniversalMediaController {
     this.active = false;
     window.removeEventListener('keydown', this.handleKeydown, true);
     window.removeEventListener('keyup', this.handleKeyup, true);
-    window.removeEventListener('blur', this.clearHeldShortcut);
+    window.removeEventListener('blur', this.handleWindowBlur);
     window.removeEventListener('message', this.handleTheaterMessage, true);
     document.removeEventListener('play', this.handleMediaActivity, true);
     document.removeEventListener('pointerdown', this.handlePagePointer, true);
+    document.removeEventListener('pointermove', this.handlePressMove, true);
+    document.removeEventListener('pointerup', this.handlePagePointerEnd, true);
+    document.removeEventListener('pointercancel', this.handlePagePointerEnd, true);
     document.removeEventListener(this.stateEvent, this.handleBridgeState as EventListener);
     document.removeEventListener('visibilitychange', this.handleVisibility);
     window.removeEventListener('scroll', this.handleViewportChange);
     window.removeEventListener('resize', this.handleViewportChange);
     this.clearHeldShortcut();
+    this.releaseOverride(false);
+    this.resetPressEvidence();
     this.clearLoop();
     this.exitTheater(true);
     this.stopVisibilityTracking();
@@ -400,6 +438,8 @@ export class UniversalMediaController {
   private handleVisibility = (): void => {
     if (document.visibilityState === 'hidden') {
       this.clearHeldShortcut();
+      this.releaseOverride(true);
+      this.resetPressEvidence();
       this.stopVisibilityTracking();
       this.stopDiscovery();
       this.hideOverlay();
@@ -547,6 +587,7 @@ export class UniversalMediaController {
   }
 
   private untrackMedia(media: HTMLMediaElement): void {
+    if (this.overrideActive && this.overrideMedia === media) this.releaseOverride(false);
     this.visibilityObserver?.unobserve(media);
     if (this.loopMedia === media) this.clearLoop();
     if (this.overlayAnchor === media) {
@@ -568,16 +609,26 @@ export class UniversalMediaController {
   private handleMediaActivity = (event: Event): void => {
     const media = mediaFromTarget(event.target);
     if (!media) return;
-    if (this.lastInteracted !== media) this.overlayPositionDirty = true;
+    const mediaChanged = this.lastInteracted !== media;
+    if (mediaChanged) this.overlayPositionDirty = true;
     this.lastInteracted = media;
     this.trackMedia(media);
     if (event.type === 'play' && !this.recoveringMedia.has(media)) {
       this.applyRate(media, this.desiredSpeed, false);
     }
+    if (mediaChanged) this.refreshOverlayVisibility();
   };
 
   private handlePagePointer = (event: PointerEvent): void => {
-    this.lastPageGestureAt = performance.now();
+    if (event.target === this.overlayHost || event.isPrimary === false) return;
+    this.pressStartedAt = performance.now();
+    this.pressSteady = true;
+    this.pressOrigin = {
+      x: Number.isFinite(event.clientX) ? event.clientX : 0,
+      y: Number.isFinite(event.clientY) ? event.clientY : 0,
+    };
+    document.removeEventListener('pointermove', this.handlePressMove, true);
+    document.addEventListener('pointermove', this.handlePressMove, true);
     const media = mediaFromTarget(event.target);
     if (!media) return;
     if (this.lastInteracted !== media) this.overlayPositionDirty = true;
@@ -585,14 +636,51 @@ export class UniversalMediaController {
     this.trackMedia(media);
   };
 
+  private handlePressMove = (event: PointerEvent): void => {
+    if (!this.pressOrigin || event.isPrimary === false) return;
+    const x = Number.isFinite(event.clientX) ? event.clientX : this.pressOrigin.x;
+    const y = Number.isFinite(event.clientY) ? event.clientY : this.pressOrigin.y;
+    const distance = Math.abs(x - this.pressOrigin.x) + Math.abs(y - this.pressOrigin.y);
+    if (distance <= PRESS_SLOP_PX) return;
+    this.pressSteady = false;
+    document.removeEventListener('pointermove', this.handlePressMove, true);
+  };
+
+  private handlePagePointerEnd = (event: PointerEvent): void => {
+    if (event.isPrimary === false || this.pressStartedAt === null) return;
+    const now = performance.now();
+    if (now - this.pressStartedAt < HOLD_INTENT_MS) {
+      this.prevClickAt = this.lastClickAt;
+      this.lastClickAt = now;
+    }
+    this.lastPointerEndAt = now;
+    this.resetPressEvidence();
+    this.releaseOverride(true);
+  };
+
+  private resetPressEvidence(): void {
+    document.removeEventListener('pointermove', this.handlePressMove, true);
+    this.pressStartedAt = null;
+    this.pressOrigin = null;
+    this.pressSteady = true;
+  }
+
+  private handleWindowBlur = (): void => {
+    this.clearHeldShortcut();
+    this.releaseOverride(true);
+    this.resetPressEvidence();
+  };
+
   private handleDirectMediaActivity = (event: Event): void => {
     const media = mediaFromTarget(event.currentTarget);
     if (!media) return;
-    if (this.lastInteracted !== media) this.overlayPositionDirty = true;
+    const mediaChanged = this.lastInteracted !== media;
+    if (mediaChanged) this.overlayPositionDirty = true;
     this.lastInteracted = media;
     if (event.type === 'play' && !this.recoveringMedia.has(media)) {
       this.applyRate(media, this.desiredSpeed, false);
     }
+    if (mediaChanged) this.refreshOverlayVisibility();
   };
 
   private handleLoadedMetadata = (event: Event): void => {
@@ -610,6 +698,7 @@ export class UniversalMediaController {
     const media = mediaFromTarget(event.currentTarget);
     if (
       !media ||
+      (this.overrideActive && this.overrideMedia === media) ||
       media.ended ||
       this.selectedMedia() !== media ||
       media.duration === Number.POSITIVE_INFINITY ||
@@ -656,16 +745,28 @@ export class UniversalMediaController {
   ): void {
     const actual = clampUniversalSpeed(rate);
     const now = performance.now();
+    if (this.overrideActive && Math.abs(actual - this.overrideRate) < 0.001) return;
     const expected = media
       ? this.appliedRates.get(media) ?? this.desiredSpeed
       : this.desiredSpeed;
-    const differs = Math.abs(actual - expected) > 0.001;
-    if (!differs) return;
-    const followsUserGesture = now - this.lastPageGestureAt < 1_500;
+    if (Math.abs(actual - expected) <= 0.001) return;
+    const verdict = classifyExternalRate(actual, {
+      now,
+      lastKeyIntentAt: this.lastKeyIntentAt,
+      lastClickAt: this.lastClickAt,
+      prevClickAt: this.prevClickAt,
+      lastPointerEndAt: this.lastPointerEndAt,
+      pressStartedAt: this.pressStartedAt,
+      pressSteady: this.pressSteady,
+    });
+    if (verdict === 'temporary') {
+      this.enterOverride(actual, media);
+      return;
+    }
     const shouldProtect =
       effectiveFightback(this.settings, this.rule) ||
       now < this.protectRateUntil;
-    if (shouldProtect && !followsUserGesture) {
+    if (verdict === 'autonomous' && shouldProtect) {
       this.protectRateUntil = Math.max(this.protectRateUntil, now + 5_000);
       if (media) this.applyRate(media, expected, false);
       else this.dispatchBridge({ action: 'rate', rate: expected }, bridgeTarget);
@@ -690,17 +791,27 @@ export class UniversalMediaController {
       this.media,
       this.lastInteracted,
       (item) => this.visibleAreas.get(item) ?? 0,
+      (item) => isDecorativeMedia(item) || Boolean(this.siteHandler?.shouldIgnoreMedia?.(item)),
     );
   }
 
   private handleKeydown = (event: KeyboardEvent): void => {
     if (event.defaultPrevented || isEditableTarget(event.target)) return;
+    if (
+      event.isComposing ||
+      event.keyCode === 229 ||
+      event.key === 'Process' ||
+      event.key === 'Dead'
+    ) return;
     const command = commandForKeyboardEvent(event, this.settings);
     // A key we do not consume is still the user acting on the page. Sites change
     // speed from their own shortcuts -- YouTube's < and > among them -- and that
     // must not be mistaken for a silent reset and undone.
     if (!command) {
-      this.lastPageGestureAt = performance.now();
+      // Any unconsumed site shortcut is strong intent, including a change to
+      // 1x. Pointer evidence is deliberately stricter because a single click
+      // often resets players as a side effect.
+      this.lastKeyIntentAt = performance.now();
       return;
     }
     if (
@@ -711,12 +822,11 @@ export class UniversalMediaController {
       !event.metaKey &&
       !event.shiftKey &&
       (
-        this.hostname === 'youtube.com' ||
-        this.hostname.endsWith('.youtube.com')
+        this.siteHandler?.ownsPlainTheaterKey
       )
     ) {
       // Handed back to YouTube, so it counts as the user acting on the page.
-      this.lastPageGestureAt = performance.now();
+      this.lastKeyIntentAt = performance.now();
       return;
     }
     if (this.settings.exclusiveKeys) {
@@ -778,6 +888,10 @@ export class UniversalMediaController {
       this.refreshOverlayVisibility();
       return;
     }
+    if (action === 'flashIndicator') {
+      this.flashOverlay();
+      return;
+    }
     if (action === 'theater') {
       this.toggleTheater(media);
       return;
@@ -804,12 +918,12 @@ export class UniversalMediaController {
     }
     if (action === 'slower') {
       const step = value ?? this.settings.speedStep;
-      this.changeRate(media, roundSpeed(this.desiredSpeed - step, step));
+      this.changeRate(media, stepUniversalSpeed(this.desiredSpeed, -step, step));
       return;
     }
     if (action === 'faster') {
       const step = value ?? this.settings.speedStep;
-      this.changeRate(media, roundSpeed(this.desiredSpeed + step, step));
+      this.changeRate(media, stepUniversalSpeed(this.desiredSpeed, step, step));
       return;
     }
     if (action === 'reset') {
@@ -825,6 +939,14 @@ export class UniversalMediaController {
         ? -(value ?? this.settings.rewindSeconds)
         : (value ?? this.settings.advanceSeconds);
       if (media && isSeekable(media)) {
+        if (this.siteHandler?.seek?.(
+          media,
+          seconds,
+          (detail) => this.dispatchBridge(detail, media),
+        )) {
+          this.showOverlay(this.desiredSpeed, `${seconds > 0 ? '+' : ''}${seconds}s`);
+          return;
+        }
         media.currentTime = Math.min(media.duration, Math.max(0, media.currentTime + seconds));
         this.showOverlay(this.desiredSpeed, `${seconds > 0 ? '+' : ''}${seconds}s`);
       } else {
@@ -867,20 +989,13 @@ export class UniversalMediaController {
       return;
     }
     if (action === 'toggleMute') {
-      if (media) media.muted = !media.muted;
-      else this.dispatchBridge({ action: 'mute' });
-      this.showOverlay(this.desiredSpeed, media?.muted ? '🔇' : '🔊');
+      void this.toggleMasterMute();
       return;
     }
     if (action === 'volumeDown' || action === 'volumeUp') {
       const amount = Math.min(1, Math.max(0.01, value ?? 0.1));
-      const delta = action === 'volumeDown' ? -amount : amount;
-      if (media) media.volume = Math.min(1, Math.max(0, media.volume + delta));
-      else this.dispatchBridge({ action: 'volume', delta });
-      this.showOverlay(
-        this.desiredSpeed,
-        media ? `${Math.round(media.volume * 100)}%` : action === 'volumeDown' ? '−🔊' : '+🔊',
-      );
+      const delta = (action === 'volumeDown' ? -amount : amount) * 100;
+      void this.setMasterVolume(this.volumeInfo().percent + delta);
       return;
     }
   }
@@ -894,12 +1009,105 @@ export class UniversalMediaController {
     const direction = delta < 0 ? -1 : 1;
     this.changeRate(
       this.selectedMedia(),
-      roundSpeed(this.desiredSpeed + direction * step, step),
+      stepUniversalSpeed(this.desiredSpeed, direction * step, step),
     );
   }
 
   togglePlayback(): void {
     this.performAction('pause', this.selectedMedia());
+  }
+
+  volumeInfo(): MasterVolumeInfo {
+    const media = this.selectedMedia();
+    if (media) {
+      return this.volumeStates.get(media) ?? {
+        mediaFound: true,
+        percent: Math.round(media.volume * 100),
+        muted: media.muted,
+        boosted: false,
+        boostSupported: true,
+      };
+    }
+    return this.bridgeVolumeState ?? {
+      mediaFound: false,
+      percent: 100,
+      muted: false,
+      boosted: false,
+      boostSupported: false,
+    };
+  }
+
+  requestVolumeInfo(): MasterVolumeInfo {
+    this.dispatchBridge({ action: 'volumeInfo' }, this.selectedMedia() ?? document);
+    return this.volumeInfo();
+  }
+
+  setMasterVolume(percent: number): Promise<MasterVolumeInfo> {
+    return this.requestVolumeChange({
+      action: 'setVolume',
+      percent: Math.round(Math.min(600, Math.max(0, Number.isFinite(percent) ? percent : 100))),
+    });
+  }
+
+  setMediaAudioProfile(settings: {
+    percent: number;
+    bass: number;
+    voice: number;
+  }): Promise<MasterVolumeInfo> {
+    return this.requestVolumeChange({ action: 'setAudioProfile', settings });
+  }
+
+  toggleMasterMute(): Promise<MasterVolumeInfo> {
+    return this.requestVolumeChange({ action: 'toggleMasterMute' });
+  }
+
+  private requestVolumeChange(detail: Record<string, unknown>): Promise<MasterVolumeInfo> {
+    const media = this.selectedMedia();
+    const revision = this.volumeRevision;
+    this.dispatchBridge(detail, media ?? document);
+    if (this.volumeRevision !== revision) return Promise.resolve(this.volumeInfo());
+
+    if (media && detail.action === 'setVolume' && Number(detail.percent) <= 100) {
+      const percent = Number(detail.percent);
+      media.volume = percent / 100;
+      if (percent > 0) media.muted = false;
+      const info: MasterVolumeInfo = {
+        mediaFound: true,
+        percent,
+        muted: media.muted,
+        boosted: false,
+        boostSupported: true,
+      };
+      this.recordVolumeState(info, media);
+      return Promise.resolve(info);
+    }
+    if (media && detail.action === 'toggleMasterMute') {
+      media.muted = !media.muted;
+      const info = { ...this.volumeInfo(), muted: media.muted };
+      this.recordVolumeState(info, media);
+      return Promise.resolve(info);
+    }
+
+    return new Promise((resolve) => {
+      const finish = (info: MasterVolumeInfo) => {
+        window.clearTimeout(timer);
+        this.pendingVolumeResolvers.delete(finish);
+        resolve(info);
+      };
+      const timer = window.setTimeout(() => finish({
+        ...this.volumeInfo(),
+        boostSupported: false,
+      }), 1_000);
+      this.pendingVolumeResolvers.add(finish);
+    });
+  }
+
+  private recordVolumeState(info: MasterVolumeInfo, media: HTMLMediaElement | null): void {
+    this.volumeRevision += 1;
+    if (media) this.volumeStates.set(media, info);
+    else this.bridgeVolumeState = info;
+    const nextResolver = this.pendingVolumeResolvers.values().next().value;
+    if (nextResolver) nextResolver(info);
   }
 
   private async togglePictureInPicture(media: HTMLMediaElement | null): Promise<void> {
@@ -1101,6 +1309,7 @@ export class UniversalMediaController {
   }
 
   private changeRate(media: HTMLMediaElement | null, rate: number): void {
+    this.releaseOverride(false);
     const next = clampUniversalSpeed(rate);
     this.protectRateUntil = performance.now() + 8_000;
     this.acceptSpeed(next);
@@ -1113,6 +1322,7 @@ export class UniversalMediaController {
   }
 
   private applyRate(media: HTMLMediaElement, rate: number, show: boolean): void {
+    if (this.overrideActive && this.overrideMedia === media) return;
     const next = clampUniversalSpeed(rate);
     applyPreservesPitch(media, this.settings.preservePitch);
     if (Math.abs(media.playbackRate - next) < 0.001) {
@@ -1147,19 +1357,57 @@ export class UniversalMediaController {
     }, 750);
   }
 
+  private enterOverride(rate: number, media: HTMLMediaElement | null): void {
+    if (this.overrideTimer !== null) window.clearTimeout(this.overrideTimer);
+    this.overrideActive = true;
+    this.overrideMedia = media;
+    this.overrideRate = rate;
+    if (media) this.appliedRates.set(media, rate);
+    this.showOverlay(rate, '⏩');
+    this.overrideTimer = window.setTimeout(() => this.releaseOverride(true), 10_000);
+  }
+
+  private releaseOverride(restore: boolean): void {
+    if (!this.overrideActive) return;
+    if (this.overrideTimer !== null) window.clearTimeout(this.overrideTimer);
+    this.overrideTimer = null;
+    const media = this.overrideMedia;
+    this.overrideActive = false;
+    this.overrideMedia = null;
+    if (!restore) return;
+    this.protectRateUntil = Math.max(this.protectRateUntil, performance.now() + 2_000);
+    if (media) this.applyRate(media, this.desiredSpeed, false);
+    else this.dispatchBridge({ action: 'rate', rate: this.desiredSpeed });
+    this.showOverlay(this.desiredSpeed);
+  }
+
+  private displaySpeed(): number {
+    return this.overrideActive ? this.overrideRate : this.desiredSpeed;
+  }
+
   private dispatchBridge(
     detail: Record<string, unknown>,
     target: EventTarget = document,
   ): void {
+    const payload = { ...detail, allowAudio: this.settings.audioEnabled };
+    const isGecko = /(?:Firefox|Waterfox|Zen)\//i.test(navigator.userAgent);
     target.dispatchEvent(new CustomEvent(this.controlEvent, {
-      detail: { ...detail, allowAudio: this.settings.audioEnabled },
+      detail: isGecko ? JSON.stringify(payload) : payload,
       bubbles: true,
       composed: true,
     }));
   }
 
-  private handleBridgeState = (event: CustomEvent<BridgeState>): void => {
-    const detail = event.detail;
+  private handleBridgeState = (event: CustomEvent<BridgeState | string>): void => {
+    let detail: BridgeState;
+    try {
+      detail = typeof event.detail === 'string'
+        ? JSON.parse(event.detail) as BridgeState
+        : event.detail;
+    } catch {
+      return;
+    }
+    if (!detail || typeof detail !== 'object') return;
     if (detail.mediaType === 'audio' && !this.settings.audioEnabled) return;
     if (detail.kind === 'shadow') {
       const target = event.target;
@@ -1175,6 +1423,26 @@ export class UniversalMediaController {
     }
     if (detail.kind === 'theater') {
       this.relayTheater(detail.active ? 'enter' : 'exit');
+      return;
+    }
+    if (
+      detail.kind === 'volume' &&
+      Number.isFinite(detail.percent) &&
+      typeof detail.muted === 'boolean' &&
+      typeof detail.boosted === 'boolean' &&
+      typeof detail.boostSupported === 'boolean'
+    ) {
+      const media = event.target instanceof HTMLMediaElement ? event.target : null;
+      this.recordVolumeState({
+        mediaFound: true,
+        percent: Math.round(detail.percent!),
+        muted: detail.muted,
+        boosted: detail.boosted,
+        boostSupported: detail.boostSupported,
+        ...(Number.isFinite(detail.bass) ? { bass: Math.round(detail.bass!) } : {}),
+        ...(Number.isFinite(detail.voice) ? { voice: Math.round(detail.voice!) } : {}),
+      }, media);
+      this.showOverlay(this.displaySpeed(), detail.muted ? '🔇' : `${Math.round(detail.percent!)}%`);
       return;
     }
     if (
@@ -1253,16 +1521,21 @@ export class UniversalMediaController {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'badge';
-    button.setAttribute('aria-label', 'Playback speed');
+    const locale = resolveLocale(
+      this.extensionSettings.locale,
+      document.documentElement.lang,
+      navigator.languages,
+    );
+    button.setAttribute('aria-label', ut(locale, 'title'));
     const value = document.createElement('span');
     button.append(value);
     const controls = document.createElement('span');
     controls.className = 'controls';
     const controlButtons: Array<[string, string, () => void]> = [
-      ['«', 'Rewind', () => this.performAction('rewind', this.selectedMedia())],
-      ['−', 'Decrease speed', () => this.performAction('slower', this.selectedMedia())],
-      ['+', 'Increase speed', () => this.performAction('faster', this.selectedMedia())],
-      ['»', 'Forward', () => this.performAction('advance', this.selectedMedia())],
+      ['«', ut(locale, 'rewind'), () => this.performAction('rewind', this.selectedMedia())],
+      ['−', ut(locale, 'slower'), () => this.performAction('slower', this.selectedMedia())],
+      ['+', ut(locale, 'faster'), () => this.performAction('faster', this.selectedMedia())],
+      ['»', ut(locale, 'advance'), () => this.performAction('advance', this.selectedMedia())],
     ];
     for (const [text, label, action] of controlButtons) {
       const control = document.createElement('button');
@@ -1307,12 +1580,11 @@ export class UniversalMediaController {
         this.overlayTimer = window.setTimeout(() => this.settleOverlay(), 500);
       }
     });
-    controller.addEventListener('wheel', (event) => {
+    host.addEventListener('wheel', (event) => {
       if (
         !this.settings.wheelEnabled ||
         this.overlayHoverTimer !== null ||
-        event.ctrlKey ||
-        Math.abs(event.deltaY) < 50
+        !isWheelSpeedGesture(event)
       ) return;
       event.preventDefault();
       event.stopPropagation();
@@ -1383,6 +1655,18 @@ export class UniversalMediaController {
     }
   }
 
+  private flashOverlay(): void {
+    const previousOverride = this.overlayVisibilityOverride;
+    this.overlayVisibilityOverride = true;
+    this.showOverlay(this.displaySpeed());
+    if (this.overlayTimer !== null) window.clearTimeout(this.overlayTimer);
+    this.overlayTimer = window.setTimeout(() => {
+      this.overlayTimer = null;
+      this.overlayVisibilityOverride = previousOverride;
+      this.refreshOverlayVisibility();
+    }, 1_250);
+  }
+
   private refreshOverlayVisibility(): void {
     if (
       this.theaterState?.source ||
@@ -1407,7 +1691,7 @@ export class UniversalMediaController {
     this.ensureOverlay();
     if (!this.overlayHost || !this.overlayValue) return;
     this.positionOverlay();
-    this.overlayValue.textContent = overlayText(this.desiredSpeed);
+    this.overlayValue.textContent = overlayText(this.displaySpeed());
     if (
       this.settings.indicatorMode === 'always' ||
       this.overlayVisibilityOverride === true
@@ -1422,7 +1706,7 @@ export class UniversalMediaController {
 
   private settleOverlay(): void {
     this.overlayTimer = null;
-    if (this.overlayValue) this.overlayValue.textContent = overlayText(this.desiredSpeed);
+    if (this.overlayValue) this.overlayValue.textContent = overlayText(this.displaySpeed());
     if (
       this.settings.indicatorMode === 'always' ||
       this.overlayVisibilityOverride === true

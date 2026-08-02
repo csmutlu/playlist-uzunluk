@@ -317,6 +317,163 @@ h2 {
   cursor: pointer;
 }
 
+.volume-master {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid rgba(128, 128, 128, 0.25);
+  border-radius: 11px;
+  background: rgba(128, 128, 128, 0.07);
+}
+
+.volume-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.volume-heading span {
+  color: #ff0033;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+}
+
+.volume-heading em {
+  padding: 2px 4px;
+  border-radius: 4px;
+  background: rgba(255, 0, 51, 0.12);
+  font-size: 8px;
+  font-style: normal;
+  letter-spacing: 0.4px;
+}
+
+.volume-master input[type='range'] {
+  width: 100%;
+  accent-color: #ff0033;
+}
+
+.volume-master input:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.volume-scale {
+  display: flex;
+  justify-content: space-between;
+  color: GrayText;
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+}
+
+.audio-suite {
+  border-color: rgba(255, 0, 51, 0.28);
+  background:
+    radial-gradient(circle at 90% 0%, rgba(255, 0, 51, 0.12), transparent 45%),
+    rgba(128, 128, 128, 0.06);
+}
+
+.audio-state {
+  padding: 3px 6px;
+  border-radius: 999px;
+  background: rgba(128, 128, 128, 0.13);
+  color: GrayText;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+}
+
+.audio-state.active {
+  background: rgba(25, 166, 90, 0.14);
+  color: #15914e;
+}
+
+.equalizer-controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+}
+
+.equalizer-controls label {
+  min-width: 0;
+  padding: 9px;
+  border-radius: 10px;
+  background: rgba(128, 128, 128, 0.07);
+}
+
+.equalizer-controls label > span,
+.audible-tabs-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 10px;
+}
+
+.equalizer-controls output,
+.audible-tabs-heading span {
+  color: #ff0033;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+}
+
+.equalizer-controls input[type='range'] {
+  width: 100%;
+  accent-color: #ff0033;
+}
+
+.audible-tabs {
+  display: grid;
+  gap: 5px;
+  max-height: 126px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.audible-tabs button {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 5px 8px;
+  border: 1px solid rgba(128, 128, 128, 0.22);
+  border-radius: 8px;
+  background: rgba(128, 128, 128, 0.06);
+  color: CanvasText;
+  cursor: pointer;
+  text-align: start;
+}
+
+.audible-tabs button:hover,
+.audible-tabs button.active {
+  border-color: rgba(255, 0, 51, 0.48);
+  background: rgba(255, 0, 51, 0.09);
+}
+
+.tab-sound {
+  color: #ff0033;
+  font-size: 14px;
+  text-align: center;
+}
+
+.tab-title {
+  overflow: hidden;
+  font-size: 10px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audible-tabs em {
+  color: #15914e;
+  font-size: 7px;
+  font-style: normal;
+  font-weight: 900;
+  letter-spacing: 0.35px;
+}
+
 .quick-play {
   border: 0;
   background: #ff0033;

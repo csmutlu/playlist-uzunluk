@@ -10,7 +10,7 @@ export default defineConfig({
     name: '__MSG_extensionName__',
     short_name: '__MSG_extensionShortName__',
     description: '__MSG_extensionDescription__',
-    version: '1.7.0',
+    version: '2.0.0',
     ...(browser === 'firefox'
       ? {
           optional_permissions: [
@@ -28,8 +28,8 @@ export default defineConfig({
             },
           },
         }
-      : {
-          minimum_chrome_version: '114',
+        : {
+          minimum_chrome_version: '116',
           optional_host_permissions: [
             'https://www.googleapis.com/*',
             'http://*/*',
@@ -47,6 +47,8 @@ export default defineConfig({
     permissions: [
       'storage',
       'scripting',
+      'tabs',
+      ...(browser === 'firefox' ? [] : ['activeTab', 'offscreen', 'tabCapture']),
       ...(browser === 'firefox' ? ['http://*/*', 'https://*/*', 'file:///*'] : []),
     ],
     ...(browser === 'firefox'
@@ -56,6 +58,7 @@ export default defineConfig({
             js: ['universal.js'],
             run_at: 'document_start',
             all_frames: true,
+            match_about_blank: true,
           }],
         }
       : {}),
@@ -67,6 +70,12 @@ export default defineConfig({
     },
     action: {
       default_title: '__MSG_extensionName__',
+      default_icon: {
+        16: 'icon-disabled-16.png',
+        32: 'icon-disabled-32.png',
+        48: 'icon-disabled-48.png',
+        128: 'icon-disabled-128.png',
+      },
     },
   }),
 });

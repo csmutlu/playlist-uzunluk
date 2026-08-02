@@ -1,18 +1,18 @@
 {
-  "name": "playlist-zamani",
-  "version": "1.7.0",
+  "name": "videoexpert",
+  "version": "2.0.0",
   "private": true,
   "license": "MIT",
   "type": "module",
   "description": "YouTube playlist süre asistanı ve tüm siteler için hafif video hız kontrolü.",
   "repository": {
     "type": "git",
-    "url": "https://github.com/csmutlu/playlist-uzunluk.git"
+    "url": "https://github.com/csmutlu/videoexpert.git"
   },
   "bugs": {
-    "url": "https://github.com/csmutlu/playlist-uzunluk/issues"
+    "url": "https://github.com/csmutlu/videoexpert/issues"
   },
-  "homepage": "https://github.com/csmutlu/playlist-uzunluk#readme",
+  "homepage": "https://github.com/csmutlu/videoexpert#readme",
   "scripts": {
     "dev": "wxt",
     "dev:firefox": "wxt -b firefox",

@@ -74,6 +74,15 @@ export const EMPTY_UNIVERSAL_SITE_DATA: UniversalSiteData = {
   playback: {},
 };
 
+export const DEFAULT_UNIVERSAL_SITE_DATA: UniversalSiteData = {
+  ...EMPTY_UNIVERSAL_SITE_DATA,
+  patternRules: [
+    { id: 'default-meet', pattern: 'meet.google.com', enabled: false, updatedAt: 0 },
+    { id: 'default-teams', pattern: 'teams.microsoft.com', enabled: false, updatedAt: 0 },
+    { id: 'default-hangouts', pattern: 'hangouts.google.com', enabled: false, updatedAt: 0 },
+  ],
+};
+
 export const DEFAULT_SETTINGS: ExtensionSettings = {
   schemaVersion: 1,
   locale: 'auto',

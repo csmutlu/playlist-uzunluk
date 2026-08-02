@@ -1,6 +1,9 @@
-# Playlist Zamanı
+# VideoExpert
 
 **English** · [Türkçe](README.md)
+
+**Stable release:** `2.0.0` · [Changelog](CHANGELOG.md) ·
+[GitHub Releases](https://github.com/csmutlu/videoexpert/releases)
 
 A lightweight browser extension that calculates the total and remaining length of
 YouTube playlists, and lets you drive video and audio speed from the keyboard on
@@ -10,7 +13,7 @@ Developed Brave-first; also compatible with Chrome, Edge, Opera, Firefox and Zen
 Browser. Calculation and media control happen on your device. No analytics, ads
 or third-party tracking services are used.
 
-![Playlist Zamanı playlist view](docs/screenshots/playlist-overview.png)
+![VideoExpert playlist view](docs/screenshots/playlist-overview.png)
 
 ## Contents
 
@@ -43,9 +46,20 @@ or third-party tracking services are used.
 - Manual watched selections take priority over automatic detection.
 - Stores recently opened playlists, their progress and where you left off in the
   **My playlists** screen.
+- Searches playlist titles accent-insensitively; filters by watched state, length,
+  and availability; sorts by playlist order, title, shortest, or longest.
 - Marks a result as "partial" when a list loads incompletely; unknown durations
   are never counted as zero.
 - Can complete public playlists with an optional YouTube Data API key.
+
+### Audio Master
+
+- One `0%–600%` popup slider controls the complete sound of the active tab.
+- Bass boost and voice clarity are applied locally with Web Audio filters.
+- The popup lists tabs playing audio and switches to any listed tab with one click.
+- Chromium capture works independently of the page player and continues after the
+  popup closes. Firefox/Zen applies the same controls to supported HTML5 media
+  because Gecko does not expose an equivalent complete-tab audio capture API.
 
 ### Universal media control
 
@@ -66,7 +80,7 @@ or third-party tracking services are used.
 - The speed badge is draggable; its size, opacity and visibility are configurable.
 - Every shortcut can be changed, and extra shortcuts can be added.
 
-![Playlist Zamanı detailed view](docs/screenshots/playlist-details.png)
+![VideoExpert detailed view](docs/screenshots/playlist-details.png)
 
 ## Quick start
 
@@ -77,8 +91,8 @@ Requirements: an up-to-date Node.js and npm.
 1. Clone the repository and create a production bundle:
 
    ```bash
-   git clone https://github.com/csmutlu/playlist-uzunluk.git
-   cd playlist-uzunluk
+   git clone https://github.com/csmutlu/videoexpert.git
+   cd videoexpert
    npm install
    npm run build
    ```
@@ -95,7 +109,7 @@ Requirements: an up-to-date Node.js and npm.
 3. Turn on **Developer mode**.
 4. Press **Load unpacked**.
 5. Select the project's `.output/chrome-mv3` folder.
-6. Pin Playlist Zamanı to the toolbar and refresh any video tabs that were
+6. Pin VideoExpert to the toolbar and refresh any video tabs that were
    already open.
 
 When the extension is updated, run `npm run build` again, press **Reload** on the
@@ -139,7 +153,7 @@ Files are written to the `.output` folder.
 
 1. Open a playlist page on YouTube:
    `https://www.youtube.com/playlist?list=...`
-2. The Playlist Zamanı panel appears under the playlist info card.
+2. The VideoExpert panel appears under the playlist info card.
 3. In its collapsed view it shows the total length, video count and selected speed.
 4. Click the panel to expand the details. The `1x`, `1.25x`, `1.5x`, `1.75x` and
    `2x` equivalents are listed one under the other.
@@ -185,7 +199,7 @@ permission is requested only when the feature is turned on. In the Firefox/Zen
 bundle the permission is granted once during installation; no media control
 happens until the feature is enabled.
 
-1. Open the Playlist Zamanı popup from the toolbar.
+1. Open the VideoExpert popup from the toolbar.
 2. Turn on **Enable on all sites**.
 3. Approve the site access request shown in Chromium. On Firefox/Zen this
    permission was already granted during installation.
@@ -232,7 +246,7 @@ This feature is designed for regular players as well as players inside iframes
 and Shadow DOM. It is independent of the site's own fullscreen button.
 
 On YouTube, a plain `T` is left to YouTube's own theater mode. If you want to use
-Playlist Zamanı's in-tab theater mode on YouTube too, assign this action to `Y`,
+VideoExpert's in-tab theater mode on YouTube too, assign this action to `Y`,
 `Shift+T` or another key from the shortcut editor in the popup. The default `T`
 behavior on other sites does not change.
 
@@ -266,7 +280,7 @@ You do not have to rebuild your shortcuts and site rules by hand.
 
 1. Open Video Speed Controller's options page and use **Export settings** to
    download `videospeed-settings.json`.
-2. Turn on universal speed control in the Playlist Zamanı popup.
+2. Turn on universal speed control in the VideoExpert popup.
 3. Choose the same file under **Import controller settings**. It is detected
    automatically.
 
@@ -407,7 +421,7 @@ player.
 ### The YouTube panel does not appear
 
 - Check that the address is a playlist or a watch page that contains a playlist.
-- Reload Playlist Zamanı from the extensions page.
+- Reload VideoExpert from the extensions page.
 - Fully refresh the YouTube tab.
 - If an older copy of the same extension is installed, disable it.
 
@@ -453,7 +467,7 @@ Use the reset options in the popup. If you export to JSON first, you can restore
 your settings and playlist progress later.
 
 If the problem persists, report it on
-[GitHub Issues](https://github.com/csmutlu/playlist-uzunluk/issues) with your
+[GitHub Issues](https://github.com/csmutlu/videoexpert/issues) with your
 browser, extension version, site address and reproduction steps. Do not share
 accounts, passwords, API keys or personal data.
 
@@ -463,6 +477,9 @@ Required permissions:
 
 - `storage`: settings and playlist progress
 - `scripting`: applying the universal controller to the open tab
+- `tabs`: showing the title and state of tabs that are playing audio
+- Chromium `activeTab`, `tabCapture`, and `offscreen`: processing the active tab’s
+  audio locally, only after the user changes an Audio Master control in the popup
 - `youtube.com`: playlist panel and YouTube player integration
 - On Firefox/Zen, `http://*/*`, `https://*/*` and `file:///*`: persistent and
   reliable universal control after a refresh in Gecko's temporary MV2 add-ons

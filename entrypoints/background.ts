@@ -10,7 +10,11 @@ import {
 import {
   SCHEMA_VERSION,
   type ApiPlaylistResponse,
+  type AudibleTabInfo,
   type BackgroundMessage,
+  type OffscreenAudioMessage,
+  type TabAudioSettings,
+  type TabAudioState,
 } from '../lib/types';
 import { fetchPublicPlaylist, YouTubeApiError } from '../lib/youtube-api';
 import {
@@ -20,10 +24,29 @@ import {
   unregisterUniversalScript,
 } from '../lib/universal-registration';
 import { sanitizeDownloadFilename } from '../lib/universal';
+import {
+  DEFAULT_TAB_AUDIO_SETTINGS,
+  isNeutralTabAudio,
+  normalizeTabAudioSettings,
+} from '../lib/tab-audio';
 
 const inFlight = new Map<string, Promise<ApiPlaylistResponse>>();
 const inFlightControllers = new Map<string, AbortController>();
 let universalRegistrationQueue: Promise<void> = Promise.resolve();
+let creatingOffscreenDocument: Promise<void> | null = null;
+const tabAudioQueues = new Map<number, Promise<TabAudioState>>();
+const OFFSCREEN_AUDIO_URL = 'offscreen.html';
+
+const ICON_PATHS = (enabled: boolean) => ({
+  16: enabled ? 'icon-16.png' : 'icon-disabled-16.png',
+  32: enabled ? 'icon-32.png' : 'icon-disabled-32.png',
+  48: enabled ? 'icon-48.png' : 'icon-disabled-48.png',
+  128: enabled ? 'icon-128.png' : 'icon-disabled-128.png',
+});
+
+async function setUniversalIcon(enabled: boolean): Promise<void> {
+  await browser.action.setIcon({ path: ICON_PATHS(enabled) }).catch(() => undefined);
+}
 
 function queueUniversalRegistration<T>(operation: () => Promise<T>): Promise<T> {
   const result = universalRegistrationQueue.then(operation, operation);
@@ -98,10 +121,185 @@ async function fetchPlaylist(
 
 type BackgroundResponse =
   | ApiPlaylistResponse
+  | AudibleTabInfo[]
+  | TabAudioState
   | { ok: true; registered?: boolean; downloadId?: number }
   | { ok: false; error: string; registered?: boolean };
 
+function tabAudioSupported(): boolean {
+  return typeof chrome.tabCapture?.getMediaStreamId === 'function' &&
+    typeof chrome.offscreen?.createDocument === 'function';
+}
+
+function unsupportedAudioState(tabId: number, error?: string): TabAudioState {
+  return {
+    tabId,
+    active: false,
+    supported: false,
+    ...DEFAULT_TAB_AUDIO_SETTINGS,
+    ...(error ? { error } : {}),
+  };
+}
+
+async function hasOffscreenAudioDocument(): Promise<boolean> {
+  if (!tabAudioSupported()) return false;
+  const contexts = await chrome.runtime.getContexts({
+    contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT],
+    documentUrls: [chrome.runtime.getURL(OFFSCREEN_AUDIO_URL)],
+  });
+  return contexts.length > 0;
+}
+
+async function ensureOffscreenAudioDocument(): Promise<void> {
+  if (await hasOffscreenAudioDocument()) return;
+  if (!creatingOffscreenDocument) {
+    creatingOffscreenDocument = chrome.offscreen.createDocument({
+      url: OFFSCREEN_AUDIO_URL,
+      reasons: [
+        chrome.offscreen.Reason.USER_MEDIA,
+        chrome.offscreen.Reason.AUDIO_PLAYBACK,
+      ],
+      justification: 'Apply user-requested volume and equalizer settings to tab audio.',
+    }).finally(() => {
+      creatingOffscreenDocument = null;
+    });
+  }
+  await creatingOffscreenDocument;
+}
+
+async function sendAudioEngine(
+  message: OffscreenAudioMessage,
+): Promise<TabAudioState | TabAudioState[]> {
+  return chrome.runtime.sendMessage(message) as Promise<TabAudioState | TabAudioState[]>;
+}
+
+async function audioState(tabId: number): Promise<TabAudioState> {
+  if (!tabAudioSupported()) return unsupportedAudioState(tabId);
+  if (!(await hasOffscreenAudioDocument())) {
+    return { tabId, active: false, supported: true, ...DEFAULT_TAB_AUDIO_SETTINGS };
+  }
+  return sendAudioEngine({
+    target: 'offscreen-audio',
+    type: 'audio-engine:get-state',
+    tabId,
+  }) as Promise<TabAudioState>;
+}
+
+async function setTabAudio(
+  tabId: number,
+  requested: TabAudioSettings,
+): Promise<TabAudioState> {
+  if (!tabAudioSupported()) return unsupportedAudioState(tabId);
+  const settings = normalizeTabAudioSettings(requested);
+  const current = await audioState(tabId);
+  if (current.active) {
+    if (isNeutralTabAudio(settings)) {
+      return sendAudioEngine({
+        target: 'offscreen-audio',
+        type: 'audio-engine:stop',
+        tabId,
+      }) as Promise<TabAudioState>;
+    }
+    return sendAudioEngine({
+      target: 'offscreen-audio',
+      type: 'audio-engine:update',
+      tabId,
+      settings,
+    }) as Promise<TabAudioState>;
+  }
+  if (isNeutralTabAudio(settings)) return current;
+  const tab = await browser.tabs.get(tabId);
+  if (!tab.active) {
+    return { ...current, error: 'Open this tab before enabling tab audio.' };
+  }
+  try {
+    const streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tabId });
+    await ensureOffscreenAudioDocument();
+    return sendAudioEngine({
+      target: 'offscreen-audio',
+      type: 'audio-engine:start',
+      tabId,
+      streamId,
+      settings,
+    }) as Promise<TabAudioState>;
+  } catch (error) {
+    return {
+      ...current,
+      error: error instanceof Error ? error.message : 'Tab audio capture failed.',
+    };
+  }
+}
+
+function queueTabAudio(tabId: number, settings: TabAudioSettings): Promise<TabAudioState> {
+  const previous = tabAudioQueues.get(tabId);
+  const next = (previous ?? Promise.resolve(unsupportedAudioState(tabId)))
+    .catch(() => unsupportedAudioState(tabId))
+    .then(() => setTabAudio(tabId, settings))
+    .catch(async (error: unknown) => {
+      const message = error instanceof Error ? error.message : 'Tab audio capture failed.';
+      try {
+        return { ...await audioState(tabId), error: message };
+      } catch {
+        return {
+          tabId,
+          active: false,
+          supported: tabAudioSupported(),
+          ...normalizeTabAudioSettings(settings),
+          error: message,
+        };
+      }
+    })
+    .finally(() => {
+      if (tabAudioQueues.get(tabId) === next) tabAudioQueues.delete(tabId);
+    });
+  tabAudioQueues.set(tabId, next);
+  return next;
+}
+
+async function listAudibleTabs(): Promise<AudibleTabInfo[]> {
+  const states = tabAudioSupported() && await hasOffscreenAudioDocument()
+    ? await sendAudioEngine({ target: 'offscreen-audio', type: 'audio-engine:list-states' })
+    : [];
+  const controlledIds = new Set(
+    (Array.isArray(states) ? states : []).filter((state) => state.active).map((state) => state.tabId),
+  );
+  const tabs = await browser.tabs.query({});
+  return tabs
+    .filter((tab) => tab.id !== undefined && (tab.audible || controlledIds.has(tab.id)))
+    .map((tab): AudibleTabInfo => ({
+      tabId: tab.id!,
+      title: tab.title || tab.url || `Tab ${tab.id}`,
+      url: tab.url ?? '',
+      ...(tab.favIconUrl ? { favIconUrl: tab.favIconUrl } : {}),
+      audible: Boolean(tab.audible),
+      active: Boolean(tab.active),
+      controlled: controlledIds.has(tab.id!),
+    }))
+    .sort((left, right) => Number(right.active) - Number(left.active) || left.title.localeCompare(right.title));
+}
+
 async function handleMessage(message: BackgroundMessage): Promise<BackgroundResponse> {
+  if (message.type === 'audio:list-tabs') return listAudibleTabs();
+  if (message.type === 'audio:get-state') return audioState(message.tabId);
+  if (message.type === 'audio:set') return queueTabAudio(message.tabId, message.settings);
+  if (message.type === 'audio:stop') {
+    if (!tabAudioSupported() || !(await hasOffscreenAudioDocument())) {
+      return tabAudioSupported()
+        ? { tabId: message.tabId, active: false, supported: true, ...DEFAULT_TAB_AUDIO_SETTINGS }
+        : unsupportedAudioState(message.tabId);
+    }
+    return sendAudioEngine({
+      target: 'offscreen-audio',
+      type: 'audio-engine:stop',
+      tabId: message.tabId,
+    }) as Promise<TabAudioState>;
+  }
+  if (message.type === 'audio:activate-tab') {
+    const tab = await browser.tabs.get(message.tabId);
+    if (tab.windowId !== undefined) await browser.windows.update(tab.windowId, { focused: true });
+    await browser.tabs.update(message.tabId, { active: true });
+    return { ok: true };
+  }
   if (message.type === 'universal:download') {
     const hasPermission = await browser.permissions.contains({
       permissions: ['downloads'],
@@ -137,10 +335,12 @@ async function handleMessage(message: BackgroundMessage): Promise<BackgroundResp
       return { ok: false, error: 'Host permission missing', registered: false };
     }
     await queueUniversalRegistration(() => registerUniversalScript(message.tabId));
+    await setUniversalIcon(true);
     return { ok: true, registered: true };
   }
   if (message.type === 'universal:unregister') {
     await queueUniversalRegistration(unregisterUniversalScript);
+    await setUniversalIcon(false);
     return { ok: true, registered: false };
   }
   if (message.type === 'universal:registration-status') {
@@ -190,8 +390,10 @@ export default defineBackground(() => {
         getUniversalSettings(),
         hasUniversalHostPermission(),
       ]);
-      if (settings.enabled && hasPermission) await registerUniversalScript();
+      const enabled = settings.enabled && hasPermission;
+      if (enabled) await registerUniversalScript();
       else await unregisterUniversalScript();
+      await setUniversalIcon(enabled);
     });
   };
 
@@ -203,10 +405,11 @@ export default defineBackground(() => {
 
   chrome.runtime.onMessage.addListener(
     (
-      rawMessage: BackgroundMessage,
+      rawMessage: BackgroundMessage | OffscreenAudioMessage,
       _sender,
       sendResponse: (response: BackgroundResponse) => void,
     ) => {
+      if ('target' in rawMessage) return false;
       handleMessage(rawMessage).then(sendResponse).catch((error: unknown) => {
         sendResponse({
           ok: false,
@@ -222,4 +425,15 @@ export default defineBackground(() => {
       return true;
     },
   );
+  browser.tabs.onRemoved.addListener((tabId) => {
+    if (!tabAudioSupported()) return;
+    void hasOffscreenAudioDocument().then((exists) => {
+      if (!exists) return;
+      void sendAudioEngine({
+        target: 'offscreen-audio',
+        type: 'audio-engine:stop',
+        tabId,
+      });
+    });
+  });
 });

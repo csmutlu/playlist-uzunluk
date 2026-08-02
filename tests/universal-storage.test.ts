@@ -39,6 +39,36 @@ beforeEach(() => {
 });
 
 describe('universal settings storage', () => {
+  it('seeds conferencing exclusions only when site storage is empty', async () => {
+    const fresh = await getUniversalSiteData();
+    expect(fresh.patternRules.map((rule) => rule.pattern)).toEqual([
+      'meet.google.com',
+      'teams.microsoft.com',
+      'hangouts.google.com',
+    ]);
+
+    localValues['universalSiteData:v1'] = {
+      schemaVersion: 1,
+      rules: {},
+      patternRules: [],
+      playback: {},
+    };
+    expect((await getUniversalSiteData()).patternRules).toEqual([]);
+  });
+
+  it('truncates custom CSS before the storage.sync per-item limit', async () => {
+    const result = await saveUniversalSettings({
+      ...DEFAULT_UNIVERSAL_SETTINGS,
+      customCss: 'ğ'.repeat(8_000),
+    });
+    const bytes = new TextEncoder().encode(JSON.stringify({
+      'universalSettings:v1': syncValues['universalSettings:v1'],
+    })).byteLength;
+    expect(result.customCssTruncated).toBe(true);
+    expect(result.settings.customCss.length).toBeLessThan(8_000);
+    expect(bytes).toBeLessThanOrEqual(8_000);
+  });
+
   it('keeps the playlist schema separate and normalizes universal settings', async () => {
     await saveUniversalSettings({
       ...DEFAULT_UNIVERSAL_SETTINGS,

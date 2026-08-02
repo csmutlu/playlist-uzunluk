@@ -2,11 +2,11 @@
 
 ## Kısa açıklama
 
-YouTube playlist süresi ve tüm siteler için hızlı, hafif video hız kontrolü.
+Playlistleri ara ve planla; video hızını ve sekme sesini tek eklentiden yönet.
 
 ## Ayrıntılı açıklama
 
-Playlist Zamanı, uzun eğitim ve çalışma playlistlerini planlamayı kolaylaştırır.
+VideoExpert, uzun eğitim ve çalışma playlistlerini planlamayı kolaylaştırır.
 
 - Toplam, izlenen ve kalan süreyi anında görün
 - 1x, 1.25x, 1.5x, 1.75x, 2x veya özel hızla ne kadar süreceğini hesaplayın
@@ -15,6 +15,8 @@ Playlist Zamanı, uzun eğitim ve çalışma playlistlerini planlamayı kolayla�
 - Son açılan playlistleri, yüzde ilerlemeyi ve kalan süreyi popup içinde görün
 - **Devam et** bağlantısıyla kaldığınız videoya tek tıkla dönün
 - Belirli bir video aralığını hesaplayın
+- Playlistte arayın; izlenme, süre ve erişilebilirlik durumuna göre filtreleyin;
+  başlık, süre veya playlist sırasına göre sıralayın
 - Günlük hedef belirleyip tahmini bitiş tarihini görün
 - Otomatik dil algılama ve 13 dil desteğini kullanın: Türkçe, İngilizce,
   İspanyolca, Fransızca, Arapça, Almanca, Portekizce, Rusça, Hintçe,
@@ -34,6 +36,9 @@ Playlist Zamanı, uzun eğitim ve çalışma playlistlerini planlamayı kolayla�
 - Tekrar çalışmak istediğiniz bölümü A→B döngüsüyle sürekli tekrarlatın
 - Duraklatılmış videoyu kare kare ilerletip geri alın
 - Yüksek hızlarda sesin tonu korunur; oynatıcı bu ayarı sıfırlasa bile yeniden uygulanır
+- Popup’taki `0%–600%` Audio Master ile aktif sekmenin tüm sesini yükseltin;
+  bas güçlendirme ve konuşma netliği uygulayın
+- Ses çalan sekmeleri popup içinde görün ve tek tıkla ilgili sekmeye geçin
 - Her sitenin hızını hatırlayın, siteye özel varsayılan belirleyin veya hız
   sıfırlayan oynatıcılarda isteğe bağlı hız kilidini açın
 - Alan adı, wildcard ve regex kuralları tanımlayın; kontrol ayarlarını JSON olarak
@@ -48,7 +53,8 @@ Eklenti performans odaklıdır: sürekli polling yapmaz, yalnızca değişen pla
 satırlarını ve yeni medya öğelerini işler, boşta ağ isteği göndermez. Tüm siteler
 izni kurulumda değil, evrensel kontrol kullanıcı tarafından açıldığında istenir.
 
-Gizlilik önceliklidir. Analitik, telemetri ve reklam yoktur. İlerleme cihazınızda kalır. Büyük public playlistler için YouTube Data API anahtarı isteğe bağlıdır.
+Gizlilik önceliklidir. Analitik, telemetri ve reklam yoktur. İlerleme cihazınızda
+kalır. Büyük public playlistler için YouTube Data API anahtarı isteğe bağlıdır.
 
 ## Kategori
 
@@ -56,5 +62,5 @@ Productivity
 
 ## Tek amaç beyanı
 
-Playlist izleme süresini ve ilerlemesini hesaplamak, kullanıcının izlediği
-HTML5 medyanın oynatma hızını kontrol etmek.
+YouTube playlistlerini analiz edip planlamak ve kullanıcının seçtiği HTML5 medya
+oynatımı ile sekme sesini cihaz üzerinde yönetmek.

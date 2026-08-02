@@ -3,6 +3,34 @@
 Bu dosya [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) biçimini ve
 [Semantic Versioning](https://semver.org/lang/tr/) kurallarını izler.
 
+## [2.0.0] - 2026-08-02
+
+### Eklendi
+
+- Eklentinin yeni ürün adı **VideoExpert** oldu; mağaza, popup, panel, dışa
+  aktarma ve paket adları yeni markayla güncellendi.
+- Playlist videolarında aksan duyarsız arama; izlenme, süre ve erişilebilirlik
+  filtreleri; başlık, süre ve playlist sırasına göre sıralama.
+- Chromium’da aktif sekmenin tüm sesini yakalayan Audio Master; `0%–600%` ses,
+  bas güçlendirme, konuşma netliği ve ses çalan sekmeler listesi. Firefox/Zen’de
+  aynı kontroller desteklenen sayfa medya oynatıcısına uygulanır.
+- Gizli/kapalı Shadow DOM ve iframe oynatıcıları için genişletilmiş medya köprüsü.
+- Göstergeyi anlık gösterme işlemi, devre dışı durum simgeleri ve siteye özel
+  Netflix/YouTube medya işleyicileri.
+
+### Düzeltildi
+
+- Kick benzeri sessiz ve döngüsel dekoratif animasyonların ana video sanılması.
+- Basılı tutma hızlandırması, tek/çift tıklama niyeti, IME tuşları, tekerlek
+  hareketleri, oynatıcı değiştirme ve yüksek hızda tampon kurtarma kenar durumları.
+- Hızlı ses sürgüsü komutlarının yanıt sırası ve sitenin kendi ses kontrolleriyle
+  Audio Master senkronizasyonu.
+
+### Notlar
+
+- `125` birim testi; Brave, Zen, Firefox, stres ve canlı Tabii kontrolleri geçti.
+- Evrensel content script sıkıştırılmış olarak `35 KB` bütçesinin altındadır.
+
 ## [1.7.0] - 2026-08-02
 
 ### Eklendi
@@ -98,7 +126,8 @@ Bu dosya [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) biçimini ve
 - İlk sürüm: YouTube playlist toplam/kalan süre hesaplama, ilerleme takibi,
   çalışma planı ve Playlistlerim ekranı.
 
-[1.7.0]: https://github.com/csmutlu/playlist-uzunluk/releases/tag/v1.7.0
-[1.6.8]: https://github.com/csmutlu/playlist-uzunluk/releases/tag/v1.6.8
-[1.6.0]: https://github.com/csmutlu/playlist-uzunluk/releases/tag/v1.6.0
-[1.0.0]: https://github.com/csmutlu/playlist-uzunluk/releases/tag/v1.0.0
+[2.0.0]: https://github.com/csmutlu/videoexpert/releases/tag/v2.0.0
+[1.7.0]: https://github.com/csmutlu/videoexpert/releases/tag/v1.7.0
+[1.6.8]: https://github.com/csmutlu/videoexpert/releases/tag/v1.6.8
+[1.6.0]: https://github.com/csmutlu/videoexpert/releases/tag/v1.6.0
+[1.0.0]: https://github.com/csmutlu/videoexpert/releases/tag/v1.0.0

@@ -28,6 +28,29 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
   'toggleIndicator',
 ] as const;
 
+/** Legacy keyCode fallback for keyboards that cannot expose KeyboardEvent.code. */
+export const LEGACY_KEY_CODES: Readonly<Record<number, string>> = {
+  83: 'KeyS',
+  68: 'KeyD',
+  90: 'KeyZ',
+  88: 'KeyX',
+  82: 'KeyR',
+  71: 'KeyG',
+  86: 'KeyV',
+  77: 'KeyM',
+  74: 'KeyJ',
+  84: 'KeyT',
+};
+
+const KEY_CODES_BY_CODE = Object.fromEntries(
+  Object.entries(LEGACY_KEY_CODES).map(([keyCode, code]) => [code, Number(keyCode)]),
+) as Readonly<Record<string, number>>;
+
+type ShortcutKeyboardEvent = Pick<
+  KeyboardEvent,
+  'altKey' | 'code' | 'ctrlKey' | 'metaKey' | 'shiftKey'
+> & { keyCode?: number };
+
 export function clampUniversalSpeed(value: number): number {
   if (!Number.isFinite(value)) return 1;
   return Math.min(UNIVERSAL_MAX_SPEED, Math.max(UNIVERSAL_MIN_SPEED, value));
@@ -37,6 +60,19 @@ export function roundSpeed(value: number, step = 0.1): number {
   const safeStep = Number.isFinite(step) && step > 0 ? step : 0.1;
   const rounded = Math.round(value / safeStep) * safeStep;
   return Number(clampUniversalSpeed(rounded).toFixed(3));
+}
+
+export function stepUniversalSpeed(current: number, delta: number, step: number): number {
+  const target = roundSpeed(current + delta, step);
+  if ((current < 1 && target > 1) || (current > 1 && target < 1)) return 1;
+  return target;
+}
+
+export function isWheelSpeedGesture(
+  event: Pick<WheelEvent, 'ctrlKey' | 'deltaMode' | 'deltaY'>,
+): boolean {
+  if (event.ctrlKey) return false;
+  return event.deltaMode !== WheelEvent.DOM_DELTA_PIXEL || Math.abs(event.deltaY) >= 50;
 }
 
 export function normalizeHostname(value: string): string {
@@ -68,11 +104,14 @@ export function normalizeShortcuts(
 }
 
 export function shortcutMatches(
-  event: Pick<KeyboardEvent, 'altKey' | 'code' | 'ctrlKey' | 'metaKey' | 'shiftKey'>,
+  event: ShortcutKeyboardEvent,
   binding: ShortcutBinding,
 ): boolean {
+  const codeMatches = event.code && event.code !== 'Unidentified'
+    ? event.code === binding.code
+    : KEY_CODES_BY_CODE[binding.code] === event.keyCode;
   return (
-    event.code === binding.code &&
+    codeMatches &&
     event.altKey === binding.alt &&
     event.ctrlKey === binding.ctrl &&
     event.metaKey === binding.meta &&
@@ -81,7 +120,7 @@ export function shortcutMatches(
 }
 
 export function actionForKeyboardEvent(
-  event: Pick<KeyboardEvent, 'altKey' | 'code' | 'ctrlKey' | 'metaKey' | 'shiftKey'>,
+  event: ShortcutKeyboardEvent,
   shortcuts: Record<ShortcutAction, ShortcutBinding>,
 ): ShortcutAction | null {
   return SHORTCUT_ACTIONS.find((action) => shortcutMatches(event, shortcuts[action])) ?? null;
@@ -93,7 +132,7 @@ export interface MatchedShortcut {
 }
 
 export function commandForKeyboardEvent(
-  event: Pick<KeyboardEvent, 'altKey' | 'code' | 'ctrlKey' | 'metaKey' | 'shiftKey'>,
+  event: ShortcutKeyboardEvent,
   settings: Pick<UniversalControllerSettings, 'customShortcuts' | 'shortcuts'>,
 ): MatchedShortcut | null {
   const custom = settings.customShortcuts.find(
@@ -168,6 +207,10 @@ export function isSeekable(media: HTMLMediaElement): boolean {
   );
 }
 
+export function isDecorativeMedia(media: HTMLMediaElement): boolean {
+  return media instanceof HTMLVideoElement && media.loop && media.muted && !media.controls;
+}
+
 function visibleArea(media: HTMLMediaElement): number {
   if (media instanceof HTMLAudioElement) return 0;
   const rect = media.getBoundingClientRect();
@@ -181,9 +224,11 @@ export function selectMedia(
   media: Iterable<HTMLMediaElement>,
   lastInteracted: HTMLMediaElement | null = null,
   areaFor: (media: HTMLMediaElement) => number = visibleArea,
+  shouldIgnore: (media: HTMLMediaElement) => boolean = isDecorativeMedia,
 ): HTMLMediaElement | null {
   if (
     lastInteracted?.isConnected &&
+    !shouldIgnore(lastInteracted) &&
     !lastInteracted.paused &&
     !lastInteracted.ended &&
     lastInteracted.readyState > 0
@@ -196,7 +241,7 @@ export function selectMedia(
   let bestFallback: HTMLMediaElement | null = null;
   let bestFallbackArea = -1;
   for (const item of media) {
-    if (!item.isConnected) continue;
+    if (!item.isConnected || shouldIgnore(item)) continue;
     if (item === lastInteracted) lastIsCandidate = true;
     const area = areaFor(item);
     if (!item.paused && !item.ended && item.readyState > 0) {
@@ -230,6 +275,50 @@ export function effectiveFightback(
   rule: SiteMediaRule | null | undefined,
 ): boolean {
   return rule?.fightback ?? settings.fightbackDefault;
+}
+
+export type RateVerdict = 'intent' | 'temporary' | 'autonomous';
+
+export interface RateEvidence {
+  now: number;
+  lastKeyIntentAt: number;
+  lastClickAt: number;
+  prevClickAt: number;
+  lastPointerEndAt: number;
+  pressStartedAt: number | null;
+  pressSteady: boolean;
+}
+
+export const GESTURE_WINDOW_MS = 300;
+export const KEY_INTENT_MS = 1_000;
+export const CLICK_SEQUENCE_MS = 5_000;
+export const HOLD_INTENT_MS = 300;
+export const NORMAL_EPSILON = 0.005;
+export const PRESS_SLOP_PX = 10;
+
+/** Classifies a site's rate write without depending on a browser or media node. */
+export function classifyExternalRate(rate: number, evidence: RateEvidence): RateVerdict {
+  const fresh = (timestamp: number) => {
+    const age = evidence.now - timestamp;
+    return age >= 0 && age < GESTURE_WINDOW_MS;
+  };
+  const keyAge = evidence.now - evidence.lastKeyIntentAt;
+  const keyIntent = keyAge >= 0 && keyAge < KEY_INTENT_MS;
+  const clickSequence = fresh(evidence.lastClickAt) &&
+    Number.isFinite(evidence.prevClickAt) &&
+    evidence.lastClickAt - evidence.prevClickAt <= CLICK_SEQUENCE_MS;
+
+  if (keyIntent || clickSequence) return 'intent';
+  if (
+    evidence.pressStartedAt !== null &&
+    evidence.pressSteady &&
+    evidence.now - evidence.pressStartedAt >= HOLD_INTENT_MS
+  ) return 'temporary';
+  if (
+    (evidence.pressStartedAt !== null || fresh(evidence.lastPointerEndAt)) &&
+    Math.abs(rate - 1) >= NORMAL_EPSILON
+  ) return 'intent';
+  return 'autonomous';
 }
 
 export function shortcutLabel(binding: ShortcutBinding): string {

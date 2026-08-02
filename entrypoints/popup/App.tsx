@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { browser } from 'wxt/browser';
 import {
   DEFAULT_SETTINGS,
@@ -11,6 +11,10 @@ import {
   UNIVERSAL_MIN_SPEED,
 } from '../../lib/constants';
 import { formatDuration } from '../../lib/duration';
+import {
+  DEFAULT_TAB_AUDIO_SETTINGS,
+  normalizeTabAudioSettings,
+} from '../../lib/tab-audio';
 import {
   LOCALE_OPTIONS,
   localeDirection,
@@ -40,12 +44,16 @@ import {
 import type {
   CustomShortcutAction,
   CustomShortcutBinding,
+  AudibleTabInfo,
   ExtensionSettings,
   MediaDownloadInfo,
+  MasterVolumeInfo,
   PlaylistHistoryEntry,
   ShortcutAction,
   ShortcutBinding,
   SitePatternRule,
+  TabAudioSettings,
+  TabAudioState,
   UniversalControllerSettings,
   UniversalSiteInfo,
 } from '../../lib/types';
@@ -54,6 +62,7 @@ import {
   shortcutLabel,
 } from '../../lib/universal';
 import { ut } from '../../lib/universal-i18n';
+import { at } from '../../lib/audio-i18n';
 
 function resumeUrl(entry: PlaylistHistoryEntry): string {
   const url = new URL(
@@ -124,6 +133,15 @@ export function App() {
   const [activeTabId, setActiveTabId] = useState<number | undefined>();
   const [siteHostname, setSiteHostname] = useState('');
   const [currentSiteSpeed, setCurrentSiteSpeed] = useState<number | null>(null);
+  const [tabAudio, setTabAudio] = useState<TabAudioState>({
+    tabId: -1,
+    active: false,
+    supported: false,
+    ...DEFAULT_TAB_AUDIO_SETTINGS,
+  });
+  const [audibleTabs, setAudibleTabs] = useState<AudibleTabInfo[]>([]);
+  const volumeCommandId = useRef(0);
+  const fallbackEnablePromise = useRef<Promise<void> | null>(null);
   const [siteDisabled, setSiteDisabled] = useState(false);
   const [siteDefaultSpeed, setSiteDefaultSpeed] = useState('');
   const [siteFightback, setSiteFightback] = useState(false);
@@ -169,6 +187,36 @@ export function App() {
             site.info.rule?.fightback ?? nextUniversal.fightbackDefault,
           );
         }
+        if (site.tabId !== undefined) {
+          void browser.runtime.sendMessage({
+            type: 'audio:get-state',
+            tabId: site.tabId,
+          }).then((state: TabAudioState) => {
+            setTabAudio(state);
+            if (!state.supported && nextUniversal.enabled && hasPermission) {
+              void browser.tabs.sendMessage(
+                site.tabId!,
+                { type: 'universal:volume-info' },
+              ).then((info) => {
+                const volume = info as MasterVolumeInfo;
+                setTabAudio((current) => ({
+                  ...current,
+                  active: volume.mediaFound && (
+                    volume.percent !== 100 ||
+                    (volume.bass ?? 0) > 0 ||
+                    (volume.voice ?? 0) > 0
+                  ),
+                  percent: volume.percent,
+                  bass: volume.bass ?? 0,
+                  voice: volume.voice ?? 0,
+                }));
+              }).catch(() => undefined);
+            }
+          }).catch(() => undefined);
+        }
+        void browser.runtime.sendMessage({ type: 'audio:list-tabs' })
+          .then((tabs: AudibleTabInfo[]) => setAudibleTabs(Array.isArray(tabs) ? tabs : []))
+          .catch(() => undefined);
         setLoaded(true);
       },
     );
@@ -310,6 +358,67 @@ export function App() {
     }
   };
 
+  const refreshAudibleTabs = () => browser.runtime.sendMessage({ type: 'audio:list-tabs' })
+    .then((tabs: AudibleTabInfo[]) => setAudibleTabs(Array.isArray(tabs) ? tabs : []))
+    .catch(() => undefined);
+
+  const sendAudioSettings = async (partial: Partial<TabAudioSettings>) => {
+    if (activeTabId === undefined) {
+      setStatus(ut(locale, 'noMedia'));
+      return;
+    }
+    const settings = normalizeTabAudioSettings({ ...tabAudio, ...partial });
+    const commandId = ++volumeCommandId.current;
+    setTabAudio((current) => ({ ...current, ...settings }));
+    try {
+      if (tabAudio.supported) {
+        const state = await browser.runtime.sendMessage({
+          type: 'audio:set',
+          tabId: activeTabId,
+          settings,
+        }) as TabAudioState;
+        if (commandId !== volumeCommandId.current) return;
+        setTabAudio(state);
+        setStatus(state.error ?? '');
+        void refreshAudibleTabs();
+        return;
+      }
+      if (!universal.enabled || !hasUniversalPermission) {
+        if (!fallbackEnablePromise.current) {
+          fallbackEnablePromise.current = toggleUniversal(true).finally(() => {
+            fallbackEnablePromise.current = null;
+          });
+        }
+        await fallbackEnablePromise.current;
+      }
+      const info = await browser.tabs.sendMessage(activeTabId, {
+        type: 'universal:set-audio-profile',
+        settings,
+      }) as MasterVolumeInfo;
+      if (commandId !== volumeCommandId.current) return;
+      setTabAudio((current) => ({
+        ...current,
+        active: info.mediaFound && (
+          info.percent !== 100 ||
+          (info.bass ?? settings.bass) > 0 ||
+          (info.voice ?? settings.voice) > 0
+        ),
+        percent: info.percent,
+        bass: info.bass ?? settings.bass,
+        voice: info.voice ?? settings.voice,
+      }));
+      if (!info.mediaFound) setStatus(ut(locale, 'noMedia'));
+      else if (!info.boostSupported) setStatus(ut(locale, 'volumeBoostUnavailable'));
+      else setStatus('');
+    } catch {
+      if (commandId === volumeCommandId.current) setStatus(ut(locale, 'siteUnavailable'));
+    }
+  };
+
+  const activateAudioTab = async (tabId: number) => {
+    await browser.runtime.sendMessage({ type: 'audio:activate-tab', tabId }).catch(() => undefined);
+  };
+
   const downloadCurrentMedia = async () => {
     if (activeTabId === undefined) {
       setStatus(ut(locale, 'noMedia'));
@@ -395,9 +504,9 @@ export function App() {
     const defaultSiteSpeed = siteDefaultSpeed.trim() === ''
       ? undefined
       : Number(siteDefaultSpeed);
+    const universalSave = await saveUniversalSettings(universal);
     await Promise.all([
       saveSettings(settings),
-      saveUniversalSettings(universal),
       saveApiKey(apiKey),
       saveSitePatternRules(sitePatternRules),
       ...(siteHostname
@@ -410,7 +519,12 @@ export function App() {
           })]
         : []),
     ]);
-    setStatus((current) => current || t(locale, 'settingsSaved'));
+    if (universalSave.customCssTruncated) {
+      setUniversal(universalSave.settings);
+      setStatus(ut(locale, 'customCssTruncated'));
+    } else {
+      setStatus((current) => current || t(locale, 'settingsSaved'));
+    }
   };
 
   const downloadProgress = async () => {
@@ -418,7 +532,7 @@ export function App() {
     const blobUrl = URL.createObjectURL(new Blob([content], { type: 'application/json' }));
     const link = document.createElement('a');
     link.href = blobUrl;
-    link.download = `playlist-zamani-${new Date().toISOString().slice(0, 10)}.json`;
+    link.download = `videoexpert-${new Date().toISOString().slice(0, 10)}.json`;
     link.click();
     window.setTimeout(() => URL.revokeObjectURL(blobUrl), 1_000);
   };
@@ -438,7 +552,7 @@ export function App() {
     const blobUrl = URL.createObjectURL(new Blob([content], { type: 'application/json' }));
     const link = document.createElement('a');
     link.href = blobUrl;
-    link.download = `playlist-zamani-controller-${new Date().toISOString().slice(0, 10)}.json`;
+    link.download = `videoexpert-controller-${new Date().toISOString().slice(0, 10)}.json`;
     link.click();
     window.setTimeout(() => URL.revokeObjectURL(blobUrl), 1_000);
   };
@@ -485,7 +599,7 @@ export function App() {
       <header>
         <span class="logo">◷</span>
         <div>
-          <h1>Playlist Zamanı</h1>
+          <h1>VideoExpert</h1>
           <p>{t(locale, 'popupTagline')}</p>
         </div>
       </header>
@@ -976,6 +1090,7 @@ export function App() {
                         'pictureInPicture',
                         'theater',
                         'toggleIndicator',
+                        'flashIndicator',
                       ] as const).map((action) => (
                         <option value={action} key={action}>{ut(locale, action)}</option>
                       ))}
@@ -1025,6 +1140,98 @@ export function App() {
               </div>
             </details>
           </>
+        )}
+      </section>
+
+      <section class="audio-suite" aria-labelledby="audio-suite-title">
+        <div class="section-heading">
+          <div>
+            <h2 id="audio-suite-title">{at(locale, 'title')}</h2>
+            <p class="hint">
+              {at(locale, tabAudio.supported ? 'tabWideHint' : 'pageFallbackHint')}
+            </p>
+          </div>
+          <span class={`audio-state ${tabAudio.active ? 'active' : ''}`}>
+            {at(locale, tabAudio.active ? 'active' : 'ready')}
+          </span>
+        </div>
+        <div class="volume-master">
+          <div class="volume-heading">
+            <strong>{ut(locale, 'masterVolume')}</strong>
+            <span aria-live="polite">{tabAudio.percent}%</span>
+          </div>
+          <input
+            type="range"
+            min="0"
+            max="600"
+            step="5"
+            value={tabAudio.percent}
+            disabled={activeTabId === undefined}
+            aria-label={ut(locale, 'masterVolume')}
+            aria-valuetext={`${tabAudio.percent}%`}
+            onInput={(event) => void sendAudioSettings({
+              percent: Number(event.currentTarget.value),
+            })}
+          />
+          <div class="volume-scale" aria-hidden="true">
+            <span>0%</span>
+            <span>600%</span>
+          </div>
+        </div>
+        <div class="equalizer-controls">
+          <label>
+            <span><b>{at(locale, 'bassBoost')}</b><output>{tabAudio.bass}%</output></span>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              step="5"
+              value={tabAudio.bass}
+              disabled={activeTabId === undefined}
+              aria-label={at(locale, 'bassBoost')}
+              onInput={(event) => void sendAudioSettings({
+                bass: Number(event.currentTarget.value),
+              })}
+            />
+          </label>
+          <label>
+            <span><b>{at(locale, 'voiceClarity')}</b><output>{tabAudio.voice}%</output></span>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              step="5"
+              value={tabAudio.voice}
+              disabled={activeTabId === undefined}
+              aria-label={at(locale, 'voiceClarity')}
+              onInput={(event) => void sendAudioSettings({
+                voice: Number(event.currentTarget.value),
+              })}
+            />
+          </label>
+        </div>
+        <div class="audible-tabs-heading">
+          <strong>{at(locale, 'audibleTabs')}</strong>
+          <span>{audibleTabs.length}</span>
+        </div>
+        {audibleTabs.length === 0 ? (
+          <p class="empty">{at(locale, 'noAudibleTabs')}</p>
+        ) : (
+          <div class="audible-tabs">
+            {audibleTabs.map((tab) => (
+              <button
+                type="button"
+                key={tab.tabId}
+                class={tab.active ? 'active' : ''}
+                title={tab.url}
+                onClick={() => void activateAudioTab(tab.tabId)}
+              >
+                <span class="tab-sound" aria-hidden="true">{tab.audible ? '♪' : '◉'}</span>
+                <span class="tab-title">{tab.title}</span>
+                {tab.controlled && <em>{at(locale, 'controlled')}</em>}
+              </button>
+            ))}
+          </div>
         )}
       </section>
 

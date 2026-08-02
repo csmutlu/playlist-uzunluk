@@ -147,7 +147,7 @@ export class ContentController {
         : 'development';
     return JSON.stringify(
       {
-        extension: 'Playlist Zamanı',
+        extension: 'VideoExpert',
         version,
         page: location.pathname === '/watch' ? 'watch' : 'playlist',
         locale: this.locale,

@@ -1,8 +1,8 @@
 import { browser } from 'wxt/browser';
 import {
   DEFAULT_SETTINGS,
+  DEFAULT_UNIVERSAL_SITE_DATA,
   DEFAULT_UNIVERSAL_SETTINGS,
-  EMPTY_UNIVERSAL_SITE_DATA,
   PLAYLIST_HISTORY_LIMIT,
   UNIVERSAL_SITE_HISTORY_LIMIT,
 } from './constants';
@@ -34,6 +34,7 @@ const CACHE_PREFIX = 'cache:';
 const HISTORY_KEY = 'playlistHistory';
 const UNIVERSAL_SETTINGS_KEY = 'universalSettings:v1';
 const UNIVERSAL_SITE_DATA_KEY = 'universalSiteData:v1';
+const SYNC_ITEM_SAFE_BYTES = 8_000;
 
 function storageArea(area: 'local' | 'sync') {
   // The WXT wrapper normalizes Firefox's promise-based `browser` API. The
@@ -80,10 +81,34 @@ export async function getUniversalSettings(): Promise<UniversalControllerSetting
 
 export async function saveUniversalSettings(
   settings: UniversalControllerSettings,
-): Promise<void> {
+): Promise<{ customCssTruncated: boolean; settings: UniversalControllerSettings }> {
+  const normalized = normalizeUniversalSettings(settings);
+  const originalLength = normalized.customCss.length;
+  const itemBytes = (candidate: UniversalControllerSettings) => new TextEncoder()
+    .encode(JSON.stringify({ [UNIVERSAL_SETTINGS_KEY]: candidate })).byteLength;
+  let fitted = normalized;
+  if (itemBytes(fitted) > SYNC_ITEM_SAFE_BYTES) {
+    const cssCharacters = [...fitted.customCss];
+    let low = 0;
+    let high = cssCharacters.length;
+    while (low < high) {
+      const middle = Math.ceil((low + high) / 2);
+      const candidate = { ...fitted, customCss: cssCharacters.slice(0, middle).join('') };
+      if (itemBytes(candidate) <= SYNC_ITEM_SAFE_BYTES) low = middle;
+      else high = middle - 1;
+    }
+    fitted = { ...fitted, customCss: cssCharacters.slice(0, low).join('') };
+  }
+  if (itemBytes(fitted) > SYNC_ITEM_SAFE_BYTES) {
+    throw new Error('Universal settings exceed the storage.sync item limit');
+  }
   await storageArea('sync').set({
-    [UNIVERSAL_SETTINGS_KEY]: normalizeUniversalSettings(settings),
+    [UNIVERSAL_SETTINGS_KEY]: fitted,
   });
+  return {
+    customCssTruncated: fitted.customCss.length < originalLength,
+    settings: fitted,
+  };
 }
 
 export function normalizeUniversalSettings(
@@ -179,7 +204,7 @@ export async function getUniversalSiteData(): Promise<UniversalSiteData> {
   const result = await storageArea('local').get(UNIVERSAL_SITE_DATA_KEY);
   const stored = result[UNIVERSAL_SITE_DATA_KEY] as Partial<UniversalSiteData> | undefined;
   if (!stored || stored.schemaVersion !== UNIVERSAL_SETTINGS_VERSION) {
-    return structuredClone(EMPTY_UNIVERSAL_SITE_DATA);
+    return structuredClone(DEFAULT_UNIVERSAL_SITE_DATA);
   }
   const rules = Object.fromEntries(
     Object.entries(stored.rules ?? {}).flatMap(([hostname, value]) => {

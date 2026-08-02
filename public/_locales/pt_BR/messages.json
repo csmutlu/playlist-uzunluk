@@ -1,6 +1,6 @@
 {
-  "extensionName": { "message": "Playlist Zamanı" },
-  "extensionShortName": { "message": "Playlist Zamanı" },
+  "extensionName": { "message": "VideoExpert" },
+  "extensionShortName": { "message": "VideoExpert" },
   "extensionDescription": {
     "message": "Calcula o tempo total e restante de playlists do YouTube em várias velocidades e acompanha o progresso."
   }

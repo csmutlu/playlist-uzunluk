@@ -98,6 +98,17 @@ try {
       body: tinyClip,
     }),
   );
+  await page.route('https://cdn.example.test/media/volume.webm', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'video/webm',
+      headers: {
+        'accept-ranges': 'bytes',
+        'access-control-allow-origin': '*',
+      },
+      body: tinyClip,
+    }),
+  );
   await page.route('https://player.example.test/**', (route) =>
     route.fulfill({
       status: 200,
@@ -109,7 +120,7 @@ try {
     document.querySelector('#playlist-count').textContent = '1 video';
     document.querySelector('[data-video="video-two"]').remove();
     document.querySelector('[data-video="video-one"] #text').textContent = '1:30';
-  });
+    });
   await page.waitForTimeout(400);
   panelText = await panel.evaluate(
     (element) =>
@@ -132,8 +143,13 @@ try {
     frame.id = 'cross-origin-player';
     frame.src = 'https://player.example.test/embed';
     frame.style.cssText = 'display:block;width:560px;height:315px;border:0';
+    const volumeVideo = document.createElement('video');
+    volumeVideo.id = 'volume-fixture';
+    volumeVideo.crossOrigin = 'anonymous';
+    volumeVideo.src = 'https://cdn.example.test/media/volume.webm';
+    volumeVideo.style.cssText = 'display:block;width:160px;height:90px;background:#222';
     document.body.style.overflow = 'auto';
-    document.body.append(player, frame);
+    document.body.append(player, volumeVideo, frame);
   });
   await page.locator('#cross-origin-player').waitFor({ state: 'attached' });
   await page.frameLocator('#cross-origin-player').locator('#frame-video').waitFor({
@@ -167,6 +183,204 @@ try {
     0,
     'An inactive nested player must not mount a second speed indicator',
   );
+  await page.locator('#volume-fixture').evaluate((video) => {
+    Object.defineProperties(video, {
+      paused: { configurable: true, value: false },
+      ended: { configurable: true, value: false },
+      readyState: { configurable: true, value: HTMLMediaElement.HAVE_ENOUGH_DATA },
+    });
+  });
+  await page.locator('#volume-fixture').evaluate((video) => {
+    video.dispatchEvent(new Event('play', { bubbles: true }));
+  });
+  const nativeVolume = await worker.evaluate(async () => {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab?.id === undefined) throw new Error('Fixture tab was not found');
+    return chrome.tabs.sendMessage(
+      tab.id,
+      { type: 'universal:set-volume', percent: 50 },
+      { frameId: 0 },
+    );
+  });
+  assert.deepEqual(
+    nativeVolume,
+    {
+      mediaFound: true,
+      percent: 50,
+      muted: false,
+      boosted: false,
+      boostSupported: true,
+    },
+    'Popup master volume must control native media volume below 100%.',
+  );
+  assert.equal(
+    await page.locator('#volume-fixture').evaluate((video) => video.volume),
+    0.5,
+    '50% master volume did not reach the media element.',
+  );
+  const boostedVolume = await worker.evaluate(async () => {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab?.id === undefined) throw new Error('Fixture tab was not found');
+    return chrome.tabs.sendMessage(
+      tab.id,
+      { type: 'universal:set-volume', percent: 200 },
+      { frameId: 0 },
+    );
+  });
+  assert.deepEqual(
+    boostedVolume,
+    {
+      mediaFound: true,
+      percent: 200,
+      muted: false,
+      boosted: true,
+      boostSupported: true,
+    },
+    'A CORS-safe player must accept 200% Web Audio gain.',
+  );
+  const tunedVolume = await worker.evaluate(async () => {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab?.id === undefined) throw new Error('Fixture tab was not found');
+    return chrome.tabs.sendMessage(
+      tab.id,
+      {
+        type: 'universal:set-audio-profile',
+        settings: { percent: 225, bass: 80, voice: 50 },
+      },
+      { frameId: 0 },
+    );
+  });
+  assert.deepEqual(
+    tunedVolume,
+    {
+      mediaFound: true,
+      percent: 225,
+      muted: false,
+      boosted: true,
+      boostSupported: true,
+      bass: 80,
+      voice: 50,
+    },
+    'Bass boost and voice clarity must reach the MAIN-world Web Audio graph.',
+  );
+  const mutedVolume = await worker.evaluate(async () => {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab?.id === undefined) throw new Error('Fixture tab was not found');
+    return chrome.tabs.sendMessage(
+      tab.id,
+      { type: 'universal:toggle-mute' },
+      { frameId: 0 },
+    );
+  });
+  assert.equal(mutedVolume.muted, true, 'Master mute did not silence the boosted graph.');
+  await worker.evaluate(async () => {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab?.id === undefined) throw new Error('Fixture tab was not found');
+    await chrome.tabs.sendMessage(
+      tab.id,
+      {
+        type: 'universal:set-audio-profile',
+        settings: { percent: 100, bass: 0, voice: 0 },
+      },
+      { frameId: 0 },
+    );
+  });
+
+  const verifyTabAudioCapture = async () => {
+    await page.evaluate(() => {
+    const button = document.createElement('button');
+    button.id = 'tab-audio-fixture';
+    button.textContent = 'Start tab audio';
+    button.addEventListener('click', () => {
+      const context = new AudioContext();
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      gain.gain.value = 0.015;
+      oscillator.frequency.value = 220;
+      oscillator.connect(gain).connect(context.destination);
+      oscillator.start();
+      window.__videoExpertAudioFixture = { context, oscillator };
+    }, { once: true });
+    document.body.append(button);
+  });
+    await page.locator('#tab-audio-fixture').click();
+  await page.waitForFunction(() => window.__videoExpertAudioFixture?.context.state === 'running');
+  await page.bringToFront();
+  const mediaTarget = await worker.evaluate(async () => {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab?.id === undefined || tab.windowId === undefined) {
+      throw new Error('Audible fixture tab was not found');
+    }
+    return { tabId: tab.id, windowId: tab.windowId };
+  });
+  const manualTabCapture = globalThis.process?.env?.BRAVE_MANUAL_ACTION === 'true';
+  if (manualTabCapture) {
+    console.log('MANUAL_TAB_CAPTURE_READY: click the VideoExpert toolbar action now.');
+    await page.waitForTimeout(60_000);
+  }
+  const capturedTabAudio = await worker.evaluate(async (tabId) => {
+    const [result] = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: 'ISOLATED',
+      func: async (tabId) => {
+        const state = await chrome.runtime.sendMessage({
+          type: 'audio:set',
+          tabId,
+          settings: { percent: 240, bass: 70, voice: 45 },
+        });
+        const tabs = await chrome.runtime.sendMessage({ type: 'audio:list-tabs' });
+        return { state, tabs, tabId };
+      },
+      args: [tabId],
+    });
+    return result.result;
+  }, mediaTarget.tabId);
+  if (manualTabCapture) {
+    assert.deepEqual(
+      capturedTabAudio.state,
+      {
+        tabId: capturedTabAudio.tabId,
+        active: true,
+        supported: true,
+        percent: 240,
+        bass: 70,
+        voice: 45,
+      },
+      `Chromium tab-wide audio capture failed: ${JSON.stringify(capturedTabAudio.state)}`,
+    );
+    assert.ok(
+      capturedTabAudio.tabs.some((tab) => tab.tabId === capturedTabAudio.tabId && tab.controlled),
+      'A captured tab must remain in the audible-tab list while the popup is closed.',
+    );
+    const stoppedTabAudio = await worker.evaluate(async (tabId) => {
+      const [result] = await chrome.scripting.executeScript({
+        target: { tabId },
+        world: 'ISOLATED',
+        func: (targetTabId) => chrome.runtime.sendMessage({
+          type: 'audio:stop',
+          tabId: targetTabId,
+        }),
+        args: [tabId],
+      });
+      return result.result;
+    }, capturedTabAudio.tabId);
+    assert.equal(stoppedTabAudio.active, false, 'Stopping tab audio must close its capture session.');
+  } else {
+    assert.equal(capturedTabAudio.state.active, false);
+    assert.equal(capturedTabAudio.state.supported, true);
+    assert.match(capturedTabAudio.state.error ?? '', /has not been invoked/i);
+  }
+    await page.evaluate(async () => {
+    window.__videoExpertAudioFixture?.oscillator.stop();
+    await window.__videoExpertAudioFixture?.context.close();
+    delete window.__videoExpertAudioFixture;
+    document.querySelector('#tab-audio-fixture')?.remove();
+    });
+  };
+  await page.locator('#volume-fixture').evaluate((video) => video.remove());
+  await page.locator('#universal-speed-fixture').evaluate((video) => {
+    video.dispatchEvent(new Event('play', { bubbles: true }));
+  });
   await page.waitForTimeout(150);
   const speedIndicator = page.locator('playlist-zamani-speed');
   const [videoBox, indicatorBox] = await Promise.all([
@@ -201,6 +415,129 @@ try {
     Number(await speedIndicator.evaluate((element) => element.style.opacity)) > 0,
     'The speed indicator must return to a dimmed state after hover',
   );
+
+  await worker.evaluate(async () => {
+    const key = 'universalSettings:v1';
+    const stored = (await chrome.storage.sync.get(key))[key] ?? {};
+    await chrome.storage.sync.set({
+      [key]: { ...stored, fightbackDefault: true },
+    });
+  });
+  await page.evaluate(() => {
+    const decorative = document.createElement('video');
+    decorative.id = 'decorative-video';
+    decorative.loop = true;
+    decorative.muted = true;
+    decorative.style.cssText = 'display:block;width:160px;height:90px';
+
+    const clickReset = document.createElement('button');
+    clickReset.id = 'click-reset';
+    clickReset.textContent = 'Click reset';
+    clickReset.addEventListener('click', () => {
+      document.querySelector('#universal-speed-fixture').playbackRate = 1;
+    });
+
+    const holdBoost = document.createElement('button');
+    holdBoost.id = 'hold-boost';
+    holdBoost.textContent = 'Hold boost';
+    holdBoost.addEventListener('pointerdown', () => {
+      globalThis.__boostTimer = setTimeout(() => {
+        document.querySelector('#universal-speed-fixture').playbackRate = 2;
+      }, 400);
+    });
+    holdBoost.addEventListener('pointerup', () => {
+      clearTimeout(globalThis.__boostTimer);
+      document.querySelector('#universal-speed-fixture').playbackRate = 1;
+    });
+
+    const menuOpen = document.createElement('button');
+    menuOpen.id = 'speed-menu-open';
+    menuOpen.textContent = 'Open speed menu';
+    const menuNormal = document.createElement('button');
+    menuNormal.id = 'speed-menu-normal';
+    menuNormal.textContent = 'Normal';
+    menuNormal.addEventListener('click', () => {
+      document.querySelector('#universal-speed-fixture').playbackRate = 1;
+    });
+    document.body.append(decorative, clickReset, holdBoost, menuOpen, menuNormal);
+  });
+  await page.waitForTimeout(200);
+  await worker.evaluate(async () => {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab?.id === undefined) throw new Error('Fixture tab was not found');
+    await chrome.tabs.sendMessage(
+      tab.id,
+      { type: 'universal:set-speed', speed: 1.5 },
+      { frameId: 0 },
+    );
+  });
+  await page.waitForFunction(
+    () => document.querySelector('#universal-speed-fixture').playbackRate === 1.5,
+  );
+  assert.equal(
+    await page.locator('#decorative-video').evaluate((video) => video.playbackRate),
+    1,
+    'Muted looping videos without controls must not become the active player',
+  );
+
+  await page.locator('#click-reset').click();
+  await page.waitForFunction(
+    () => document.querySelector('#universal-speed-fixture').playbackRate === 1.5,
+  );
+  const clickResetSiteInfo = await worker.evaluate(async () => {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab?.id === undefined) throw new Error('Fixture tab was not found');
+    return chrome.tabs.sendMessage(tab.id, { type: 'universal:site-info' }, { frameId: 0 });
+  });
+  assert.equal(clickResetSiteInfo.speed, 1.5, 'A single click must not replace locked speed');
+
+  const holdBox = await page.locator('#hold-boost').boundingBox();
+  assert(holdBox, 'Hold-boost fixture must be visible');
+  await page.mouse.move(holdBox.x + holdBox.width / 2, holdBox.y + holdBox.height / 2);
+  await page.mouse.down();
+  await page.waitForTimeout(700);
+  assert.equal(
+    await page.locator('#universal-speed-fixture').evaluate((video) => video.playbackRate),
+    2,
+    'A held-pointer boost must remain audible while the pointer is down',
+  );
+  const heldSiteInfo = await worker.evaluate(async () => {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab?.id === undefined) throw new Error('Fixture tab was not found');
+    return chrome.tabs.sendMessage(tab.id, { type: 'universal:site-info' }, { frameId: 0 });
+  });
+  assert.equal(heldSiteInfo.speed, 1.5, 'A held boost must not replace the preferred speed');
+  await page.mouse.up();
+  await page.waitForFunction(
+    () => document.querySelector('#universal-speed-fixture').playbackRate === 1.5,
+  );
+
+  await page.locator('#speed-menu-open').click();
+  await page.waitForTimeout(1_200);
+  await page.locator('#speed-menu-normal').click();
+  await page.waitForFunction(
+    () => document.querySelector('#universal-speed-fixture').playbackRate === 1,
+  );
+  await page.waitForTimeout(250);
+  const normalSiteInfo = await worker.evaluate(async () => {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab?.id === undefined) throw new Error('Fixture tab was not found');
+    return chrome.tabs.sendMessage(tab.id, { type: 'universal:site-info' }, { frameId: 0 });
+  });
+  assert.equal(
+    normalSiteInfo.speed,
+    1,
+    'A two-click Normal menu choice must be accepted',
+  );
+  await worker.evaluate(async () => {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab?.id === undefined) throw new Error('Fixture tab was not found');
+    await chrome.tabs.sendMessage(
+      tab.id,
+      { type: 'universal:set-speed', speed: 1.1 },
+      { frameId: 0 },
+    );
+  });
   await page.evaluate(() => {
     const input = document.createElement('input');
     input.id = 'shortcut-guard';
@@ -221,9 +558,26 @@ try {
     await page.locator('#universal-speed-fixture').evaluate((video) => video.playbackRate) > 1.1,
     'Holding D must repeatedly increase speed',
   );
-  for (let index = 0; index < 200; index += 1) await page.keyboard.press('d');
+  await worker.evaluate(async () => {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab?.id === undefined) throw new Error('Fixture tab was not found');
+    await chrome.tabs.sendMessage(
+      tab.id,
+      { type: 'universal:set-speed', speed: 15.9 },
+      { frameId: 0 },
+    );
+  });
+  await page.waitForFunction(
+    () => document.querySelector('#universal-speed-fixture').playbackRate === 15.9,
+  );
+  await page.keyboard.press('d');
   await page.waitForFunction(
     () => document.querySelector('#universal-speed-fixture').playbackRate === 16,
+  );
+  assert.equal(
+    await page.locator('#universal-speed-fixture').evaluate((video) => video.playbackRate),
+    16,
+    'D must clamp at 16x',
   );
   await page.keyboard.press('r');
   await page.keyboard.press('d');
@@ -277,6 +631,7 @@ try {
       currentTime: { configurable: true, writable: true, value: 30 },
       duration: { configurable: true, value: 120 },
       paused: { configurable: true, value: false },
+      ended: { configurable: true, value: false },
       readyState: {
         configurable: true,
         value: HTMLMediaElement.HAVE_ENOUGH_DATA,
@@ -543,14 +898,19 @@ try {
     'Speed changes must keep the original pitch',
   );
 
+  await verifyTabAudioCapture();
   const popup = await context.newPage();
   await popup.goto(`chrome-extension://${extensionId}/popup.html`);
+  await popup.locator('.audio-suite').waitFor({ state: 'visible', timeout: 5_000 });
+  assert.equal(await popup.locator(".volume-master input[type=range][max='600']").count(), 1);
+  assert.equal(await popup.locator(".equalizer-controls input[type=range][max='100']").count(), 2);
+  assert.equal(await popup.locator('.audible-tabs-heading').count(), 1);
   await popup.locator('.playlist-item').waitFor({ state: 'visible', timeout: 5_000 });
   assert.match(await popup.locator('.playlist-item').innerText(), /Modern Web Development/);
   assert.equal(await popup.locator('.playlist-item .continue').count(), 1);
 
   console.log(
-    'Brave smoke test passed: native YouTube T, rebound extension theater key, single cross-frame indicator, held D/S, 16x clamp, iframe/closed-shadow theater mode, frame stepping, A→B loop, pitch preservation, input guard and Playlistlerim.',
+    'Brave smoke test passed: 0–600% master volume, bass/voice EQ, audible-tab UI, native YouTube T, rebound extension theater key, single cross-frame indicator, held D/S, 16x clamp, iframe/closed-shadow theater mode, frame stepping, A→B loop, pitch preservation, input guard and playlists.',
   );
 } finally {
   await context?.close();

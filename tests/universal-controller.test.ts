@@ -50,6 +50,15 @@ function customShortcut(
   };
 }
 
+function pointer(target: EventTarget, type: 'pointerdown' | 'pointermove' | 'pointerup'): void {
+  target.dispatchEvent(new MouseEvent(type, {
+    bubbles: true,
+    cancelable: true,
+    clientX: type === 'pointermove' ? 30 : 5,
+    clientY: 5,
+  }));
+}
+
 describe('UniversalMediaController', () => {
   it('applies the preferred speed and handles S/D/R without polling', async () => {
     const video = document.createElement('video');
@@ -420,6 +429,27 @@ describe('UniversalMediaController', () => {
     controller.dispose();
   });
 
+  it('leaves plain T to youtube-nocookie embeds', async () => {
+    const video = document.createElement('video');
+    document.body.append(video);
+    const controller = new UniversalMediaController({
+      channel: 'youtube-nocookie-theater',
+      hostname: 'www.youtube-nocookie.com',
+      settings: { ...DEFAULT_UNIVERSAL_SETTINGS, enabled: true },
+      extensionSettings: DEFAULT_SETTINGS,
+      rule: null,
+      rememberedSpeed: null,
+      saveSpeed: async () => undefined,
+    });
+    controller.start();
+    await settleDiscovery();
+
+    const event = new KeyboardEvent('keydown', { code: 'KeyT', cancelable: true });
+    window.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+    controller.dispose();
+  });
+
   it('promotes a focused cross-frame player and restores it on the relayed exit', async () => {
     const backgroundVideo = document.createElement('video');
     const frame = document.createElement('iframe');
@@ -486,6 +516,273 @@ describe('UniversalMediaController', () => {
     video.dispatchEvent(new Event('ratechange'));
     expect(video.playbackRate).toBe(1.35);
     expect(controller.siteInfo().speed).toBe(1.35);
+    controller.dispose();
+  });
+
+  it('ignores IME composition keystrokes', async () => {
+    const video = document.createElement('video');
+    document.body.append(video);
+    const controller = new UniversalMediaController({
+      channel: 'ime',
+      hostname: 'example.com',
+      settings: { ...DEFAULT_UNIVERSAL_SETTINGS, enabled: true },
+      extensionSettings: DEFAULT_SETTINGS,
+      rule: null,
+      rememberedSpeed: null,
+      saveSpeed: async () => undefined,
+    });
+    controller.start();
+    await settleDiscovery();
+
+    window.dispatchEvent(new KeyboardEvent('keydown', {
+      code: 'KeyD',
+      key: 'Process',
+      isComposing: true,
+    }));
+    expect(video.playbackRate).toBe(1);
+    controller.dispose();
+  });
+
+  it('routes Netflix seek shortcuts through the MAIN-world bridge', async () => {
+    const video = seekableVideo(120);
+    document.body.append(video);
+    const controls: Array<Record<string, unknown>> = [];
+    video.addEventListener('playlist-zamani:control:netflix-seek', (event) => {
+      controls.push((event as CustomEvent<Record<string, unknown>>).detail);
+    });
+    const controller = new UniversalMediaController({
+      channel: 'netflix-seek',
+      hostname: 'www.netflix.com',
+      settings: { ...DEFAULT_UNIVERSAL_SETTINGS, enabled: true },
+      extensionSettings: DEFAULT_SETTINGS,
+      rule: null,
+      rememberedSpeed: null,
+      saveSpeed: async () => undefined,
+    });
+    controller.start();
+    await settleDiscovery();
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyZ' }));
+    expect(controls).toContainEqual(expect.objectContaining({
+      action: 'netflixSeek',
+      seconds: -10,
+    }));
+    expect(video.currentTime).toBe(0);
+    controller.dispose();
+  });
+
+  it('ignores YouTube thumbnail and ad-layer videos when selecting a player', async () => {
+    const ad = document.createElement('div');
+    ad.className = 'ytp-ad-player-overlay';
+    const adVideo = document.createElement('video');
+    ad.append(adVideo);
+    const thumbnail = document.createElement('video');
+    thumbnail.className = 'video-thumbnail';
+    const player = document.createElement('video');
+    document.body.append(ad, thumbnail, player);
+    const controller = new UniversalMediaController({
+      channel: 'youtube-media-filter',
+      hostname: 'www.youtube.com',
+      settings: { ...DEFAULT_UNIVERSAL_SETTINGS, enabled: true },
+      extensionSettings: { ...DEFAULT_SETTINGS, defaultSpeed: 1.5 },
+      rule: null,
+      rememberedSpeed: null,
+      saveSpeed: async () => undefined,
+    });
+    controller.start();
+    await settleDiscovery();
+
+    expect(player.playbackRate).toBe(1.5);
+    expect(adVideo.playbackRate).toBe(1);
+    expect(thumbnail.playbackRate).toBe(1);
+    controller.dispose();
+  });
+
+  it('flashes the indicator even when its normal mode is hidden', async () => {
+    const video = document.createElement('video');
+    document.body.append(video);
+    const controller = new UniversalMediaController({
+      channel: 'flash-indicator',
+      hostname: 'example.com',
+      settings: {
+        ...DEFAULT_UNIVERSAL_SETTINGS,
+        enabled: true,
+        indicatorMode: 'hidden',
+        customShortcuts: [customShortcut('flashIndicator', 'KeyB')],
+      },
+      extensionSettings: DEFAULT_SETTINGS,
+      rule: null,
+      rememberedSpeed: null,
+      saveSpeed: async () => undefined,
+    });
+    controller.start();
+    await settleDiscovery();
+    expect(document.querySelector('playlist-zamani-speed')).toBeNull();
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB' }));
+    const overlay = document.querySelector('playlist-zamani-speed') as HTMLElement;
+    expect(overlay.style.opacity).toBe('1');
+    await vi.advanceTimersByTimeAsync(1_300);
+    expect(overlay.style.opacity).toBe('0');
+    controller.dispose();
+  });
+
+  it('rejects a single-click 1x side effect while speed lock is enabled', async () => {
+    const video = document.createElement('video');
+    document.body.append(video);
+    const controller = new UniversalMediaController({
+      channel: 'click-reset',
+      hostname: 'example.com',
+      settings: { ...DEFAULT_UNIVERSAL_SETTINGS, enabled: true, fightbackDefault: true },
+      extensionSettings: { ...DEFAULT_SETTINGS, defaultSpeed: 1.5 },
+      rule: null,
+      rememberedSpeed: null,
+      saveSpeed: async () => undefined,
+    });
+    controller.start();
+    await settleDiscovery();
+
+    pointer(video, 'pointerdown');
+    pointer(video, 'pointerup');
+    video.playbackRate = 1;
+    video.dispatchEvent(new Event('ratechange'));
+
+    expect(video.playbackRate).toBe(1.5);
+    expect(controller.siteInfo().speed).toBe(1.5);
+    controller.dispose();
+  });
+
+  it('accepts Normal from a two-click menu and non-normal from one click', async () => {
+    const video = document.createElement('video');
+    document.body.append(video);
+    const controller = new UniversalMediaController({
+      channel: 'menu-intent',
+      hostname: 'example.com',
+      settings: { ...DEFAULT_UNIVERSAL_SETTINGS, enabled: true, fightbackDefault: true },
+      extensionSettings: { ...DEFAULT_SETTINGS, defaultSpeed: 1.5 },
+      rule: null,
+      rememberedSpeed: null,
+      saveSpeed: async () => undefined,
+    });
+    controller.start();
+    await settleDiscovery();
+
+    pointer(document.body, 'pointerdown');
+    pointer(document.body, 'pointerup');
+    await vi.advanceTimersByTimeAsync(1_200);
+    pointer(video, 'pointerdown');
+    pointer(video, 'pointerup');
+    video.playbackRate = 1;
+    video.dispatchEvent(new Event('ratechange'));
+    expect(controller.siteInfo().speed).toBe(1);
+
+    pointer(video, 'pointerdown');
+    pointer(video, 'pointerup');
+    video.playbackRate = 1.75;
+    video.dispatchEvent(new Event('ratechange'));
+    expect(controller.siteInfo().speed).toBe(1.75);
+    controller.dispose();
+  });
+
+  it('honors a held-pointer boost temporarily and restores without saving it', async () => {
+    const video = document.createElement('video');
+    document.body.append(video);
+    const saveSpeed = vi.fn(async () => undefined);
+    const controller = new UniversalMediaController({
+      channel: 'hold-boost',
+      hostname: 'example.com',
+      settings: {
+        ...DEFAULT_UNIVERSAL_SETTINGS,
+        enabled: true,
+        fightbackDefault: true,
+        rememberPerSite: true,
+      },
+      extensionSettings: { ...DEFAULT_SETTINGS, defaultSpeed: 1.5 },
+      rule: null,
+      rememberedSpeed: null,
+      saveSpeed,
+    });
+    controller.start();
+    await settleDiscovery();
+
+    pointer(video, 'pointerdown');
+    await vi.advanceTimersByTimeAsync(500);
+    video.playbackRate = 2;
+    video.dispatchEvent(new Event('ratechange'));
+    expect(video.playbackRate).toBe(2);
+    expect(controller.siteInfo().speed).toBe(1.5);
+
+    pointer(video, 'pointerup');
+    expect(video.playbackRate).toBe(1.5);
+    await Promise.resolve();
+    video.playbackRate = 1;
+    video.dispatchEvent(new Event('ratechange'));
+    expect(video.playbackRate).toBe(1.5);
+    await vi.advanceTimersByTimeAsync(800);
+    expect(saveSpeed).not.toHaveBeenCalledWith(2);
+    controller.dispose();
+  });
+
+  it('restores a bridge-scoped hold boost on pointer release', async () => {
+    const controls: Array<Record<string, unknown>> = [];
+    document.addEventListener('playlist-zamani:control:bridge-boost', (event) => {
+      controls.push((event as CustomEvent<Record<string, unknown>>).detail);
+    });
+    const controller = new UniversalMediaController({
+      channel: 'bridge-boost',
+      hostname: 'example.com',
+      settings: { ...DEFAULT_UNIVERSAL_SETTINGS, enabled: true },
+      extensionSettings: { ...DEFAULT_SETTINGS, defaultSpeed: 1.5 },
+      rule: null,
+      rememberedSpeed: null,
+      saveSpeed: async () => undefined,
+    });
+    controller.start();
+    await settleDiscovery();
+
+    pointer(document.body, 'pointerdown');
+    await vi.advanceTimersByTimeAsync(500);
+    document.dispatchEvent(new CustomEvent('playlist-zamani:state:bridge-boost', {
+      detail: { kind: 'media', rate: 2, mediaType: 'video' },
+    }));
+    expect(controller.siteInfo().speed).toBe(1.5);
+    pointer(document.body, 'pointerup');
+
+    expect(controls).toContainEqual(expect.objectContaining({ action: 'rate', rate: 1.5 }));
+    controller.dispose();
+  });
+
+  it('treats a dragged speed slider as lasting intent and ignores overlay gestures', async () => {
+    const video = document.createElement('video');
+    document.body.append(video);
+    const controller = new UniversalMediaController({
+      channel: 'slider-intent',
+      hostname: 'example.com',
+      settings: { ...DEFAULT_UNIVERSAL_SETTINGS, enabled: true, fightbackDefault: true },
+      extensionSettings: { ...DEFAULT_SETTINGS, defaultSpeed: 1.5 },
+      rule: null,
+      rememberedSpeed: null,
+      saveSpeed: async () => undefined,
+    });
+    controller.start();
+    await settleDiscovery();
+
+    pointer(video, 'pointerdown');
+    await vi.advanceTimersByTimeAsync(500);
+    pointer(video, 'pointermove');
+    video.playbackRate = 2;
+    video.dispatchEvent(new Event('ratechange'));
+    expect(controller.siteInfo().speed).toBe(2);
+    pointer(video, 'pointerup');
+
+    controller.setSpeed(1.5);
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(301);
+    const overlay = document.querySelector('playlist-zamani-speed')!;
+    pointer(overlay, 'pointerdown');
+    video.playbackRate = 1.75;
+    video.dispatchEvent(new Event('ratechange'));
+    expect(video.playbackRate).toBe(1.5);
     controller.dispose();
   });
 
@@ -664,6 +961,186 @@ describe('UniversalMediaController', () => {
       null,
     );
     expect(video.preservesPitch).toBe(false);
+    controller.dispose();
+  });
+
+  it('controls native master volume and mute without a page bridge', async () => {
+    const video = document.createElement('video');
+    document.body.append(video);
+    const controller = new UniversalMediaController({
+      channel: 'native-volume',
+      hostname: 'example.com',
+      settings: { ...DEFAULT_UNIVERSAL_SETTINGS, enabled: true },
+      extensionSettings: DEFAULT_SETTINGS,
+      rule: null,
+      rememberedSpeed: null,
+      saveSpeed: async () => undefined,
+    });
+    controller.start();
+    await settleDiscovery();
+
+    await expect(controller.setMasterVolume(40)).resolves.toMatchObject({
+      mediaFound: true,
+      percent: 40,
+      muted: false,
+    });
+    expect(video.volume).toBe(0.4);
+    await expect(controller.toggleMasterMute()).resolves.toMatchObject({ muted: true });
+    expect(video.muted).toBe(true);
+    controller.dispose();
+  });
+
+  it('accepts a 600% MAIN-world volume boost report', async () => {
+    const video = document.createElement('video');
+    document.body.append(video);
+    video.addEventListener('playlist-zamani:control:boost-volume', (event) => {
+      const detail = (event as CustomEvent<Record<string, unknown>>).detail;
+      if (detail.action !== 'setVolume') return;
+      video.dispatchEvent(new CustomEvent('playlist-zamani:state:boost-volume', {
+        bubbles: true,
+        detail: {
+          kind: 'volume',
+          percent: detail.percent,
+          muted: false,
+          boosted: true,
+          boostSupported: true,
+        },
+      }));
+    });
+    const controller = new UniversalMediaController({
+      channel: 'boost-volume',
+      hostname: 'example.com',
+      settings: { ...DEFAULT_UNIVERSAL_SETTINGS, enabled: true },
+      extensionSettings: DEFAULT_SETTINGS,
+      rule: null,
+      rememberedSpeed: null,
+      saveSpeed: async () => undefined,
+    });
+    controller.start();
+    await settleDiscovery();
+
+    await expect(controller.setMasterVolume(600)).resolves.toEqual({
+      mediaFound: true,
+      percent: 600,
+      muted: false,
+      boosted: true,
+      boostSupported: true,
+    });
+    expect(controller.volumeInfo().percent).toBe(600);
+    controller.dispose();
+  });
+
+  it('applies bass boost and voice clarity through the MAIN-world audio graph', async () => {
+    const video = document.createElement('video');
+    document.body.append(video);
+    video.addEventListener('playlist-zamani:control:audio-profile', (event) => {
+      const detail = (event as CustomEvent<Record<string, unknown>>).detail;
+      if (detail.action !== 'setAudioProfile') return;
+      const settings = detail.settings as { percent: number; bass: number; voice: number };
+      queueMicrotask(() => video.dispatchEvent(new CustomEvent(
+        'playlist-zamani:state:audio-profile',
+        {
+          bubbles: true,
+          detail: {
+            kind: 'volume',
+            percent: settings.percent,
+            bass: settings.bass,
+            voice: settings.voice,
+            muted: false,
+            boosted: settings.percent > 100,
+            boostSupported: true,
+          },
+        },
+      )));
+    });
+    const controller = new UniversalMediaController({
+      channel: 'audio-profile',
+      hostname: 'example.com',
+      settings: { ...DEFAULT_UNIVERSAL_SETTINGS, enabled: true },
+      extensionSettings: DEFAULT_SETTINGS,
+      rule: null,
+      rememberedSpeed: null,
+      saveSpeed: async () => undefined,
+    });
+    controller.start();
+    await settleDiscovery();
+
+    await expect(controller.setMediaAudioProfile({
+      percent: 225,
+      bass: 80,
+      voice: 50,
+    })).resolves.toMatchObject({
+      percent: 225,
+      bass: 80,
+      voice: 50,
+      boosted: true,
+      boostSupported: true,
+    });
+    controller.dispose();
+  });
+
+  it('matches rapid asynchronous boost replies to their original commands', async () => {
+    const video = document.createElement('video');
+    document.body.append(video);
+    video.addEventListener('playlist-zamani:control:rapid-volume', (event) => {
+      const detail = (event as CustomEvent<Record<string, unknown>>).detail;
+      if (detail.action !== 'setVolume') return;
+      window.setTimeout(() => {
+        video.dispatchEvent(new CustomEvent('playlist-zamani:state:rapid-volume', {
+          bubbles: true,
+          detail: {
+            kind: 'volume',
+            percent: detail.percent,
+            muted: false,
+            boosted: true,
+            boostSupported: true,
+          },
+        }));
+      }, 10);
+    });
+    const controller = new UniversalMediaController({
+      channel: 'rapid-volume',
+      hostname: 'example.com',
+      settings: { ...DEFAULT_UNIVERSAL_SETTINGS, enabled: true },
+      extensionSettings: DEFAULT_SETTINGS,
+      rule: null,
+      rememberedSpeed: null,
+      saveSpeed: async () => undefined,
+    });
+    controller.start();
+    await settleDiscovery();
+
+    const first = controller.setMasterVolume(200);
+    const second = controller.setMasterVolume(300);
+    await vi.advanceTimersByTimeAsync(10);
+    await expect(first).resolves.toMatchObject({ percent: 200 });
+    await expect(second).resolves.toMatchObject({ percent: 300 });
+    controller.dispose();
+  });
+
+  it('reports unsupported boost without changing native volume when no bridge handles it', async () => {
+    const video = document.createElement('video');
+    video.volume = 0.8;
+    document.body.append(video);
+    const controller = new UniversalMediaController({
+      channel: 'unsupported-volume',
+      hostname: 'example.com',
+      settings: { ...DEFAULT_UNIVERSAL_SETTINGS, enabled: true },
+      extensionSettings: DEFAULT_SETTINGS,
+      rule: null,
+      rememberedSpeed: null,
+      saveSpeed: async () => undefined,
+    });
+    controller.start();
+    await settleDiscovery();
+
+    const result = controller.setMasterVolume(200);
+    await vi.advanceTimersByTimeAsync(1_000);
+    await expect(result).resolves.toMatchObject({
+      percent: 80,
+      boostSupported: false,
+    });
+    expect(video.volume).toBe(0.8);
     controller.dispose();
   });
 

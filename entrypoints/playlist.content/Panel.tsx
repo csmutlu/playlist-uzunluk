@@ -4,7 +4,6 @@ import type {
   ContentController,
   ControllerSnapshot,
 } from '../../lib/content-controller';
-import { snapshotTimes } from '../../lib/content-controller';
 import {
   clampSpeed,
   formatClock,
@@ -19,6 +18,12 @@ import {
   type MessageKey,
 } from '../../lib/i18n';
 import { buildDailyPlan } from '../../lib/planner';
+import {
+  explorePlaylistVideos,
+  playlistVideoTimes,
+  type PlaylistVideoFilter,
+  type PlaylistVideoSort,
+} from '../../lib/playlist-explorer';
 
 interface PanelProps {
   controller: ContentController;
@@ -64,20 +69,48 @@ export function Panel({ controller }: PanelProps) {
   const [weekdays, setWeekdays] = useState([1, 2, 3, 4, 5]);
   const [startDate, setStartDate] = useState(localDateValue(new Date()));
   const [diagnosticCopied, setDiagnosticCopied] = useState(false);
+  const [videoQuery, setVideoQuery] = useState('');
+  const [videoFilter, setVideoFilter] = useState<PlaylistVideoFilter>('all');
+  const [videoSort, setVideoSort] = useState<PlaylistVideoSort>('playlist');
+  const [visibleResultCount, setVisibleResultCount] = useState(50);
 
   useEffect(() => {
     const end = analysis?.expectedCount ?? analysis?.videos.at(-1)?.index ?? 1;
     setRangeEnd((current) => (current <= 1 ? end : Math.min(current, end)));
   }, [analysis?.playlistId, analysis?.expectedCount, analysis?.countedCount]);
 
-  const selectedRange =
-    mode === 'range' ? { start: Math.max(1, rangeStart), end: Math.max(rangeStart, rangeEnd) } : undefined;
+  const selectedRange = mode === 'range'
+    ? { start: Math.max(1, rangeStart), end: Math.max(rangeStart, rangeEnd) }
+    : undefined;
+  const rangeVideos = useMemo(
+    () => analysis?.videos.filter((video) =>
+      !selectedRange || (video.index >= selectedRange.start && video.index <= selectedRange.end)) ?? [],
+    [analysis, selectedRange?.start, selectedRange?.end],
+  );
+  const exploredVideos = useMemo(
+    () => explorePlaylistVideos(rangeVideos, snapshot.progress, {
+      query: videoQuery,
+      filter: videoFilter,
+      sort: videoSort,
+      locale: localeTag(locale),
+    }),
+    [rangeVideos, snapshot.progress, videoQuery, videoFilter, videoSort, locale],
+  );
   const times = useMemo(
-    () => snapshotTimes(snapshot, selectedRange),
-    [snapshot, selectedRange?.start, selectedRange?.end],
+    () => playlistVideoTimes(
+      exploredVideos,
+      snapshot.progress,
+      snapshot.currentVideo
+        ? {
+            videoId: snapshot.currentVideo.videoId,
+            positionSeconds: snapshot.currentVideo.positionSeconds,
+          }
+        : undefined,
+    ),
+    [exploredVideos, snapshot.progress, snapshot.currentVideo],
   );
   const baseSeconds =
-    mode === 'all' ? analysis?.totalSeconds ?? 0 : times.remainingSeconds;
+    mode === 'all' ? times.selectedTotalSeconds : times.remainingSeconds;
   const adjustedRemaining = speedAdjustedSeconds(times.remainingSeconds, snapshot.speed);
   const adjustedBase = speedAdjustedSeconds(baseSeconds, snapshot.speed);
   const progressPercent =
@@ -86,7 +119,7 @@ export function Panel({ controller }: PanelProps) {
       : 0;
   const { average, shortest, longest } = useMemo(() => {
     const durations =
-      analysis?.videos
+      exploredVideos
         .map((video) => video.durationSeconds)
         .filter((duration): duration is number => duration !== null) ?? [];
     if (durations.length === 0) return { average: 0, shortest: 0, longest: 0 };
@@ -95,7 +128,7 @@ export function Panel({ controller }: PanelProps) {
       shortest: Math.min(...durations),
       longest: Math.max(...durations),
     };
-  }, [analysis]);
+  }, [exploredVideos]);
   const finish = new Date(Date.now() + adjustedRemaining * 1_000);
   const planningRemaining = Math.ceil(times.remainingSeconds / 60) * 60;
   const plan = useMemo(
@@ -109,6 +142,10 @@ export function Panel({ controller }: PanelProps) {
       }),
     [planningRemaining, snapshot.speed, dailyMinutes, weekdays, startDate],
   );
+
+  useEffect(() => {
+    setVisibleResultCount(50);
+  }, [analysis?.playlistId, videoQuery, videoFilter, videoSort, mode, rangeStart, rangeEnd]);
 
   if (!snapshot.playlistId) return null;
 
@@ -127,6 +164,12 @@ export function Panel({ controller }: PanelProps) {
     setRangeStart(current);
     setRangeEnd(analysis?.expectedCount ?? analysis?.videos.at(-1)?.index ?? current);
     setMode('range');
+  };
+
+  const resetExplorer = () => {
+    setVideoQuery('');
+    setVideoFilter('all');
+    setVideoSort('playlist');
   };
 
   const copyDiagnostics = async () => {
@@ -149,7 +192,7 @@ export function Panel({ controller }: PanelProps) {
   return (
     <section
       class={`panel ${expanded ? 'is-expanded' : ''}`}
-      aria-label="Playlist Zamanı"
+      aria-label="VideoExpert"
       dir={localeDirection(locale)}
       lang={localeTag(locale)}
     >
@@ -163,7 +206,7 @@ export function Panel({ controller }: PanelProps) {
         <span class="summary-top">
           <span class="brand">
             <span class="brand-mark" aria-hidden="true">◷</span>
-            Playlist Zamanı
+            VideoExpert
           </span>
           <span class="summary-actions">
             <span class={`coverage ${complete ? 'complete' : 'partial'}`}>
@@ -223,6 +266,106 @@ export function Panel({ controller }: PanelProps) {
                 )}
                 {analysis.unavailableCount > 0 && (
                   <span>{analysis.unavailableCount} {t(locale, 'unavailable')}</span>
+                )}
+              </div>
+
+              <div class="playlist-explorer">
+                <div class="explorer-heading">
+                  <div>
+                    <strong>{t(locale, 'browsePlaylist')}</strong>
+                    <span>
+                      {exploredVideos.length} {t(locale, 'matchingVideos')} ·{' '}
+                      {formatDuration(times.selectedTotalSeconds, locale, settings.showSeconds)}
+                    </span>
+                  </div>
+                  {(videoQuery || videoFilter !== 'all' || videoSort !== 'playlist') && (
+                    <button type="button" class="secondary" onClick={resetExplorer}>
+                      {t(locale, 'resetFilters')}
+                    </button>
+                  )}
+                </div>
+                <label class="video-search">
+                  <span>{t(locale, 'searchVideos')}</span>
+                  <input
+                    type="search"
+                    value={videoQuery}
+                    placeholder={t(locale, 'searchVideos')}
+                    onInput={(event) => setVideoQuery(event.currentTarget.value)}
+                  />
+                </label>
+                <div class="explorer-selects">
+                  <label>
+                    <span>{t(locale, 'filter')}</span>
+                    <select
+                      value={videoFilter}
+                      onChange={(event) =>
+                        setVideoFilter(event.currentTarget.value as PlaylistVideoFilter)}
+                    >
+                      <option value="all">{t(locale, 'allVideos')}</option>
+                      <option value="unwatched">{t(locale, 'unwatchedVideos')}</option>
+                      <option value="watched">{t(locale, 'watchedVideos')}</option>
+                      <option value="short">{t(locale, 'shortVideos')}</option>
+                      <option value="medium">{t(locale, 'mediumVideos')}</option>
+                      <option value="long">{t(locale, 'longVideos')}</option>
+                      <option value="unavailable">{t(locale, 'unavailableVideos')}</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>{t(locale, 'sort')}</span>
+                    <select
+                      value={videoSort}
+                      onChange={(event) =>
+                        setVideoSort(event.currentTarget.value as PlaylistVideoSort)}
+                    >
+                      <option value="playlist">{t(locale, 'playlistOrder')}</option>
+                      <option value="title">{t(locale, 'titleOrder')}</option>
+                      <option value="shortest">{t(locale, 'shortestFirst')}</option>
+                      <option value="longest">{t(locale, 'longestFirst')}</option>
+                    </select>
+                  </label>
+                </div>
+                {exploredVideos.length === 0 ? (
+                  <div class="explorer-empty">{t(locale, 'noMatches')}</div>
+                ) : (
+                  <div class="video-results">
+                    {exploredVideos.slice(0, visibleResultCount).map((video) => {
+                      const watched = snapshot.progress?.videos[video.videoId]?.watched === true;
+                      const url = new URL('https://www.youtube.com/watch');
+                      url.searchParams.set('v', video.videoId);
+                      url.searchParams.set('list', analysis.playlistId);
+                      url.searchParams.set('index', String(video.index));
+                      return (
+                        <article class={`video-result ${watched ? 'watched' : ''}`} key={video.videoId}>
+                          <a href={url.toString()} title={video.title}>
+                            <small>#{video.index}</small>
+                            <strong>{video.title}</strong>
+                          </a>
+                          <span>
+                            {video.durationSeconds === null
+                              ? t(locale, 'unknown')
+                              : formatDuration(video.durationSeconds, locale, settings.showSeconds)}
+                          </span>
+                          <button
+                            type="button"
+                            aria-pressed={watched}
+                            title={t(locale, watched ? 'markUnwatched' : 'markWatched')}
+                            onClick={() => controller.toggleManual(video.videoId)}
+                          >
+                            {watched ? '✓' : '○'}
+                          </button>
+                        </article>
+                      );
+                    })}
+                    {visibleResultCount < exploredVideos.length && (
+                      <button
+                        type="button"
+                        class="show-more secondary"
+                        onClick={() => setVisibleResultCount((count) => count + 50)}
+                      >
+                        {t(locale, 'showMore')}
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
 

@@ -125,7 +125,8 @@ export type CustomShortcutAction =
   | 'pictureInPicture'
   | 'frameBack'
   | 'frameForward'
-  | 'loop';
+  | 'loop'
+  | 'flashIndicator';
 
 export interface ShortcutBinding {
   code: string;
@@ -195,6 +196,39 @@ export interface UniversalSiteInfo {
   rule: SiteMediaRule | null;
 }
 
+export interface MasterVolumeInfo {
+  mediaFound: boolean;
+  percent: number;
+  muted: boolean;
+  boosted: boolean;
+  boostSupported: boolean;
+  bass?: number;
+  voice?: number;
+}
+
+export interface TabAudioSettings {
+  percent: number;
+  bass: number;
+  voice: number;
+}
+
+export interface TabAudioState extends TabAudioSettings {
+  tabId: number;
+  active: boolean;
+  supported: boolean;
+  error?: string;
+}
+
+export interface AudibleTabInfo {
+  tabId: number;
+  title: string;
+  url: string;
+  favIconUrl?: string;
+  audible: boolean;
+  active: boolean;
+  controlled: boolean;
+}
+
 export type MediaDownloadBlockReason =
   | 'noMedia'
   | 'blobMedia'
@@ -234,7 +268,19 @@ export type BackgroundMessage =
   | { type: 'universal:register'; tabId?: number }
   | { type: 'universal:unregister' }
   | { type: 'universal:registration-status' }
-  | { type: 'universal:download'; url: string; filename?: string };
+  | { type: 'universal:download'; url: string; filename?: string }
+  | { type: 'audio:list-tabs' }
+  | { type: 'audio:get-state'; tabId: number }
+  | { type: 'audio:set'; tabId: number; settings: TabAudioSettings }
+  | { type: 'audio:stop'; tabId: number }
+  | { type: 'audio:activate-tab'; tabId: number };
+
+export type OffscreenAudioMessage =
+  | { target: 'offscreen-audio'; type: 'audio-engine:start'; tabId: number; streamId: string; settings: TabAudioSettings }
+  | { target: 'offscreen-audio'; type: 'audio-engine:update'; tabId: number; settings: TabAudioSettings }
+  | { target: 'offscreen-audio'; type: 'audio-engine:stop'; tabId: number }
+  | { target: 'offscreen-audio'; type: 'audio-engine:get-state'; tabId: number }
+  | { target: 'offscreen-audio'; type: 'audio-engine:list-states' };
 
 export type UniversalContentMessage =
   | { type: 'universal:disable' }
@@ -242,4 +288,8 @@ export type UniversalContentMessage =
   | { type: 'universal:set-speed'; speed: number }
   | { type: 'universal:adjust-speed'; delta: number }
   | { type: 'universal:toggle-playback' }
+  | { type: 'universal:volume-info' }
+  | { type: 'universal:set-volume'; percent: number }
+  | { type: 'universal:set-audio-profile'; settings: TabAudioSettings }
+  | { type: 'universal:toggle-mute' }
   | { type: 'universal:download-info' };

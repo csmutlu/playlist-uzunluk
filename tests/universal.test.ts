@@ -1,13 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_SHORTCUTS } from '../lib/constants';
+import { handlerFor } from '../lib/site-handlers';
 import { SUPPORTED_LOCALES, type SiteMediaRule, type SitePlaybackState } from '../lib/types';
 import {
   actionForKeyboardEvent,
   advanceLoop,
+  classifyExternalRate,
   clampUniversalSpeed,
   commandForKeyboardEvent,
   frameStepSeconds,
   isEditableTarget,
+  isWheelSpeedGesture,
   loopSeekTarget,
   mediaDownloadInfo,
   resolveSiteSpeed,
@@ -15,15 +18,54 @@ import {
   selectMedia,
   shortcutLabel,
   sanitizeDownloadFilename,
+  stepUniversalSpeed,
 } from '../lib/universal';
 import { ut } from '../lib/universal-i18n';
 
 describe('universal speed helpers', () => {
+  it.each([
+    ['no evidence', 1, {}, 'autonomous'],
+    ['fresh key', 1, { lastKeyIntentAt: 10_000 }, 'intent'],
+    ['stale key', 1.5, { lastKeyIntentAt: 8_800 }, 'autonomous'],
+    ['one click to normal', 1, { lastClickAt: 9_950 }, 'autonomous'],
+    ['one click to non-normal', 1.75, { lastClickAt: 9_950, lastPointerEndAt: 9_950 }, 'intent'],
+    ['click sequence to normal', 1, { prevClickAt: 8_750, lastClickAt: 9_950 }, 'intent'],
+    ['stale click sequence', 1, { prevClickAt: 3_950, lastClickAt: 9_950 }, 'autonomous'],
+    ['steady hold', 2, { pressStartedAt: 9_500 }, 'temporary'],
+    ['short hold', 1, { pressStartedAt: 9_900 }, 'autonomous'],
+    ['key beats hold', 2, { pressStartedAt: 9_500, lastKeyIntentAt: 10_000 }, 'intent'],
+    ['moved hold', 2, { pressStartedAt: 9_500, pressSteady: false }, 'intent'],
+    ['pointer end to normal', 1, { lastPointerEndAt: 9_800 }, 'autonomous'],
+    ['pointer end to non-normal', 2, { lastPointerEndAt: 9_800 }, 'intent'],
+    ['future click is stale', 1, { lastClickAt: 10_050 }, 'autonomous'],
+  ] as const)('classifies %s rate changes', (_name, rate, partial, expected) => {
+    expect(classifyExternalRate(rate, {
+      now: 10_000,
+      lastKeyIntentAt: Number.NEGATIVE_INFINITY,
+      lastClickAt: Number.NEGATIVE_INFINITY,
+      prevClickAt: Number.NEGATIVE_INFINITY,
+      lastPointerEndAt: Number.NEGATIVE_INFINITY,
+      pressStartedAt: null,
+      pressSteady: true,
+      ...partial,
+    })).toBe(expected);
+  });
+
   it('rounds by the configured step and clamps the supported range', () => {
     expect(roundSpeed(1.56, 0.1)).toBe(1.6);
     expect(roundSpeed(1.54, 0.05)).toBe(1.55);
     expect(clampUniversalSpeed(0)).toBe(0.07);
     expect(clampUniversalSpeed(30)).toBe(16);
+    expect(stepUniversalSpeed(0.95, 0.1, 0.1)).toBe(1);
+    expect(stepUniversalSpeed(1.05, -0.1, 0.1)).toBe(1);
+  });
+
+  it('filters small touchpad deltas but accepts Firefox line-mode wheel ticks', () => {
+    expect(isWheelSpeedGesture({ deltaMode: 0, deltaY: 3, ctrlKey: false })).toBe(false);
+    expect(isWheelSpeedGesture({ deltaMode: 0, deltaY: 60, ctrlKey: false })).toBe(true);
+    expect(isWheelSpeedGesture({ deltaMode: 1, deltaY: 3, ctrlKey: false })).toBe(true);
+    expect(isWheelSpeedGesture({ deltaMode: 2, deltaY: 1, ctrlKey: false })).toBe(true);
+    expect(isWheelSpeedGesture({ deltaMode: 1, deltaY: 3, ctrlKey: true })).toBe(false);
   });
 
   it('matches physical-key shortcuts including modifiers', () => {
@@ -40,6 +82,17 @@ describe('universal speed helpers', () => {
       { code: 'KeyT', altKey: false, ctrlKey: false, metaKey: false, shiftKey: false },
       DEFAULT_SHORTCUTS,
     )).toBe('theater');
+    expect(actionForKeyboardEvent(
+      {
+        code: 'Unidentified',
+        keyCode: 68,
+        altKey: false,
+        ctrlKey: false,
+        metaKey: false,
+        shiftKey: false,
+      },
+      DEFAULT_SHORTCUTS,
+    )).toBe('faster');
   });
 
   it('lets custom commands override defaults and carry a per-key value', () => {
@@ -107,6 +160,26 @@ describe('universal speed helpers', () => {
     expect(selectMedia([first, second], first)).toBe(first);
   });
 
+  it('ignores muted looping videos without controls when selecting media', () => {
+    const decorative = document.createElement('video');
+    decorative.loop = true;
+    decorative.muted = true;
+    decorative.controls = false;
+    const normal = document.createElement('video');
+    document.body.append(decorative, normal);
+
+    expect(selectMedia([decorative, normal])).toBe(normal);
+    expect(selectMedia([decorative])).toBeNull();
+  });
+
+  it('selects YouTube and Netflix handlers without leaking to unrelated hosts', () => {
+    expect(handlerFor('www.youtube.com')?.ownsPlainTheaterKey).toBe(true);
+    expect(handlerFor('www.youtube-nocookie.com')?.ownsPlainTheaterKey).toBe(true);
+    expect(handlerFor('music.youtube.com')).toBeNull();
+    expect(handlerFor('www.netflix.com')?.seek).toBeTypeOf('function');
+    expect(handlerFor('example.com')).toBeNull();
+  });
+
   it('ships universal controller copy for every supported locale', () => {
     for (const locale of SUPPORTED_LOCALES) {
       expect(ut(locale, 'title').trim()).not.toBe('');
@@ -115,6 +188,11 @@ describe('universal speed helpers', () => {
       expect(ut(locale, 'advanced').trim()).not.toBe('');
       expect(ut(locale, 'exportSettings').trim()).not.toBe('');
       expect(ut(locale, 'downloadMedia').trim()).not.toBe('');
+      expect(ut(locale, 'flashIndicator').trim()).not.toBe('');
+      expect(ut(locale, 'customCssTruncated').trim()).not.toBe('');
+      expect(ut(locale, 'masterVolume').trim()).not.toBe('');
+      expect(ut(locale, 'muted').trim()).not.toBe('');
+      expect(ut(locale, 'volumeBoostUnavailable').trim()).not.toBe('');
     }
   });
 

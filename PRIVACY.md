@@ -1,8 +1,9 @@
-# Playlist Zamanı Gizlilik Açıklaması
+# VideoExpert Gizlilik Açıklaması
 
-Son güncelleme: 30 Temmuz 2026
+Son güncelleme: 2 Ağustos 2026
 
-Playlist Zamanı analitik, telemetri, reklam veya kullanıcı hesabı içermez. Veriler geliştiriciye ya da üçüncü taraf bir sunucuya gönderilmez.
+VideoExpert analitik, telemetri, reklam veya kullanıcı hesabı içermez. Veriler
+geliştiriciye ya da üçüncü taraf bir sunucuya gönderilmez.
 
 ## Yerel olarak işlenen veriler
 
@@ -36,6 +37,16 @@ eklenti ayrıntılarında yerel dosya erişimini ayrıca açması halinde kullan
 Firefox/Zen paketinde bu izin Gecko uyumluluğu için kurulum izinleri arasındadır;
 evrensel denetleyici kapalıyken yerel dosyalarda da çalışmaz.
 
+## Audio Master ve sekme sesi
+
+Chromium paketinde `activeTab`, `tabCapture`, `offscreen` ve `tabs` izinleri,
+kullanıcı popup’taki ses, bas veya konuşma netliği kontrolünü değiştirdiğinde aktif
+sekmenin ses akışını tarayıcı içinde işlemek ve ses çalan sekmeleri listelemek için
+kullanılır. Ses kaydedilmez, kalıcı depolamaya yazılmaz, ağ üzerinden gönderilmez
+ve eklenti dışına aktarılmaz. İşleme yalnızca tarayıcının yerel Web Audio motorunda
+yapılır. Firefox/Zen paketinde tam sekme yakalama yerine desteklenen sayfa medya
+öğesi yine yalnızca yerel Web Audio ile işlenir.
+
 ## Doğrudan medya indirme
 
 Kullanıcı **Doğrudan medyayı indir** düğmesine bastığında eklenti yalnızca
@@ -62,6 +73,9 @@ Uzantının kaldırılması Chrome’un uzantıya ait yerel verileri kaldırmas�
 
 - `storage`: Ayarlar, ilerleme ve önbellek
 - `scripting`: Küçük evrensel hız denetleyicisini açık sekmeye uygulamak
+- `tabs`: Ses çalan sekmeleri ve kullanıcı tarafından seçilen aktif sekmeyi göstermek
+- Chromium’da `activeTab`, `tabCapture`, `offscreen`: Kullanıcının seçtiği aktif
+  sekmenin sesini yerel olarak yükseltmek ve filtrelemek
 - `youtube.com`: Playlist süresini okuyup YouTube üzerinde kullanıcı arayüzü göstermek
 - Chromium’da isteğe bağlı, Firefox/Zen’de kurulum sırasında verilen `http://*/*`
   ve `https://*/*`: Evrensel hız kontrolünü kullanıcı açtığında çalıştırmak

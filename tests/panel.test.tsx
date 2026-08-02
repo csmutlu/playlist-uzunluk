@@ -61,7 +61,7 @@ describe('playlist panel', () => {
     document.body.append(root);
     render(<Panel controller={controller} />, root);
 
-    expect(root.textContent).toContain('Playlist Zamanı');
+    expect(root.textContent).toContain('VideoExpert');
     expect(root.textContent).toContain('1 saat 30 dakika');
     expect(root.querySelectorAll('.summary-speed-row')).toHaveLength(5);
     expect(root.textContent).not.toContain('Kalan:');
@@ -72,5 +72,14 @@ describe('playlist panel', () => {
     expect(root.textContent).toContain('Hızlara göre süre');
     expect(root.textContent).toContain('Çalışma planı');
     expect(root.querySelectorAll('.speed-grid button')).toHaveLength(5);
+    expect(root.querySelectorAll('.explorer-selects select')).toHaveLength(2);
+    expect(root.querySelectorAll('.video-result')).toHaveLength(2);
+
+    const search = root.querySelector<HTMLInputElement>('.video-search input')!;
+    search.value = 'two';
+    search.dispatchEvent(new InputEvent('input', { bubbles: true }));
+    await Promise.resolve();
+    expect(root.querySelectorAll('.video-result')).toHaveLength(1);
+    expect(root.querySelector('.video-result')?.textContent).toContain('Two');
   });
 });

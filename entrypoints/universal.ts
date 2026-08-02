@@ -62,7 +62,7 @@ export default defineUnlistedScript(async () => {
     document.dispatchEvent(new CustomEvent(
       `playlist-zamani:control:${channel}`,
       {
-        detail: { x: true },
+        detail: JSON.stringify({ x: true }),
       },
     ));
   };
@@ -122,7 +122,7 @@ export default defineUnlistedScript(async () => {
     message: UniversalContentMessage,
     _sender: chrome.runtime.MessageSender,
     sendResponse: (response: unknown) => void,
-  ) => {
+  ): true | void => {
     if (message.type === 'universal:site-info') {
       sendResponse(controller.siteInfo());
       return;
@@ -141,6 +141,22 @@ export default defineUnlistedScript(async () => {
       controller.togglePlayback();
       sendResponse(controller.siteInfo());
       return;
+    }
+    if (message.type === 'universal:volume-info') {
+      sendResponse(controller.requestVolumeInfo());
+      return;
+    }
+    if (message.type === 'universal:set-volume') {
+      void controller.setMasterVolume(message.percent).then(sendResponse);
+      return true;
+    }
+    if (message.type === 'universal:set-audio-profile') {
+      void controller.setMediaAudioProfile(message.settings).then(sendResponse);
+      return true;
+    }
+    if (message.type === 'universal:toggle-mute') {
+      void controller.toggleMasterMute().then(sendResponse);
+      return true;
     }
     if (message.type === 'universal:download-info') {
       sendResponse(controller.downloadInfo());

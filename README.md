@@ -1,6 +1,9 @@
-# Playlist Zamanı
+# VideoExpert
 
 **Türkçe** · [English](README.en.md)
+
+**Kararlı sürüm:** `2.0.0` · [Değişiklik günlüğü](CHANGELOG.md) ·
+[GitHub Releases](https://github.com/csmutlu/videoexpert/releases)
 
 YouTube playlistlerinin toplam ve kalan süresini hesaplayan, video ve ses hızını
 izin verdiğiniz sitelerde klavyeden yönetmenizi sağlayan hafif tarayıcı eklentisi.
@@ -9,7 +12,7 @@ Brave öncelikli geliştirilir; Chrome, Edge, Opera, Firefox ve Zen Browser ile 
 uyumludur. Hesaplama ve medya kontrolü cihazda yapılır. Analitik, reklam veya
 üçüncü taraf takip servisi kullanılmaz.
 
-![Playlist Zamanı playlist görünümü](docs/screenshots/playlist-overview.png)
+![VideoExpert playlist görünümü](docs/screenshots/playlist-overview.png)
 
 ## İçindekiler
 
@@ -39,6 +42,8 @@ uyumludur. Hesaplama ve medya kontrolü cihazda yapılır. Analitik, reklam veya
 - Günlük hedef ve aktif günlere göre tahmini bitiş tarihini hesaplar.
 - Video %90’a ulaştığında otomatik tamamlandı sayar. Bu eşik ayarlardan değiştirilebilir.
 - Manuel izlenme seçimlerini otomatik durumdan üstün tutar.
+- Playlist içinde başlığa göre arama; izlenme, süre ve erişilebilirlik filtresi;
+  playlist sırası, başlık, en kısa ve en uzun sıralaması sunar.
 - Son açılan playlistleri, ilerlemeyi ve kaldığınız videoyu **Playlistlerim** ekranında saklar.
 - Eksik yüklenen listelerde sonucu “kısmi” olarak işaretler; bilinmeyen süreyi sıfır saymaz.
 - Public playlistleri isteğe bağlı YouTube Data API anahtarıyla tamamlayabilir.
@@ -60,7 +65,16 @@ uyumludur. Hesaplama ve medya kontrolü cihazda yapılır. Analitik, reklam veya
 - Hız rozeti sürüklenebilir; boyutu, opaklığı ve görünürlüğü ayarlanabilir.
 - Bütün kısayollar değiştirilebilir ve özel kısayollar eklenebilir.
 
-![Playlist Zamanı ayrıntılı görünüm](docs/screenshots/playlist-details.png)
+### Audio Master
+
+- Popup’taki tek `0%–600%` bar, aktif sekmenin bütün sesini yönetir.
+- Bas güçlendirme ve konuşma netliği Web Audio filtreleriyle yerel olarak uygulanır.
+- Ses çalan sekmeler popup’ta listelenir; listedeki sekmeye tek tıkla geçilir.
+- Chromium’da sekme yakalama, sayfadaki oynatıcı türünden bağımsızdır ve popup
+  kapandıktan sonra da sürer. Firefox/Zen’de tarayıcı eşdeğer sekme sesi API’si
+  sunmadığı için desteklenen HTML5 medya oynatıcısına güvenli sayfa içi yöntem uygulanır.
+
+![VideoExpert ayrıntılı görünüm](docs/screenshots/playlist-details.png)
 
 ## Hızlı başlangıç
 
@@ -71,8 +85,8 @@ Gerekenler: güncel Node.js ve npm.
 1. Repoyu indirin ve production paketini oluşturun:
 
    ```bash
-   git clone https://github.com/csmutlu/playlist-uzunluk.git
-   cd playlist-uzunluk
+   git clone https://github.com/csmutlu/videoexpert.git
+   cd videoexpert
    npm install
    npm run build
    ```
@@ -89,7 +103,7 @@ Gerekenler: güncel Node.js ve npm.
 3. **Geliştirici modu**nu açın.
 4. **Paketlenmemiş öğe yükle** düğmesine basın.
 5. Projedeki `.output/chrome-mv3` klasörünü seçin.
-6. Playlist Zamanı’nı araç çubuğuna sabitleyin ve önceden açık video sekmelerini yenileyin.
+6. VideoExpert’i araç çubuğuna sabitleyin ve önceden açık video sekmelerini yenileyin.
 
 Eklenti güncellendiğinde `npm run build` komutunu yeniden çalıştırın, eklentiler
 sayfasındaki **Yeniden yükle** düğmesine basın ve açık sekmeleri yenileyin.
@@ -132,7 +146,7 @@ Dosyalar `.output` klasörüne yazılır.
 
 1. YouTube’da bir playlist sayfası açın:
    `https://www.youtube.com/playlist?list=...`
-2. Playlist bilgi kartının altında Playlist Zamanı paneli görünür.
+2. Playlist bilgi kartının altında VideoExpert paneli görünür.
 3. Kapalı görünümde toplam süre, video sayısı ve seçili hız gösterilir.
 4. Panele tıklayarak ayrıntıları açın. `1x`, `1.25x`, `1.5x`, `1.75x` ve `2x`
    karşılıkları alt alta gösterilir.
@@ -175,7 +189,7 @@ Evrensel kontrol varsayılan olarak kapalıdır. Chromium paketinde geniş site 
 yalnızca özellik açıldığında istenir. Firefox/Zen paketinde izin kurulum sırasında
 bir kez verilir; özellik açılmadıkça medya denetimi yapılmaz.
 
-1. Araç çubuğundan Playlist Zamanı popup’ını açın.
+1. Araç çubuğundan VideoExpert popup’ını açın.
 2. **Tüm sitelerde hız kontrolünü etkinleştir** seçeneğini açın.
 3. Chromium’da gösterilen site erişimi isteğini onaylayın. Firefox/Zen’de bu izin
    kurulum sırasında zaten verilmiştir.
@@ -219,7 +233,7 @@ Bu özellik normal oynatıcı, iframe ve Shadow DOM içindeki oynatıcılar içi
 tasarlanmıştır. Sitenin kendi tam ekran düğmesinden bağımsızdır.
 
 YouTube’da düz `T` tuşu YouTube’un kendi sinema modu için serbest bırakılır.
-Playlist Zamanı’nın sekme içi sinema modunu YouTube’da da kullanmak isterseniz
+VideoExpert’in sekme içi sinema modunu YouTube’da da kullanmak isterseniz
 popup’taki kısayol düzenleyiciden bu işleme `Y`, `Shift+T` veya başka bir tuş
 atayabilirsiniz. Diğer sitelerde varsayılan `T` davranışı değişmez.
 
@@ -253,7 +267,7 @@ Kısayollarınızı ve site kurallarınızı elle kurmanız gerekmez.
 
 1. Video Speed Controller’ın ayarlar sayfasını açın ve **Export settings** ile
    `videospeed-settings.json` dosyasını indirin.
-2. Playlist Zamanı popup’ında evrensel hız kontrolünü açın.
+2. VideoExpert popup’ında evrensel hız kontrolünü açın.
 3. **Kontrol ayarlarını içe aktar** ile aynı dosyayı seçin. Dosya otomatik tanınır.
 
 Aktarılanlar: hız adımı, geri/ileri sarma süreleri, tercih edilen hız (`fast`),
@@ -393,7 +407,7 @@ hız kontrolünü her zaman engellemez; son karar sitenin oynatıcısına aittir
 ### YouTube paneli görünmüyor
 
 - Adresin bir playlist veya playlist içeren izleme sayfası olduğunu kontrol edin.
-- Eklentiler sayfasından Playlist Zamanı’nı yeniden yükleyin.
+- Eklentiler sayfasından VideoExpert’i yeniden yükleyin.
 - YouTube sekmesini tamamen yenileyin.
 - Aynı eklentinin eski bir kopyası yüklüyse devre dışı bırakın.
 
@@ -439,7 +453,7 @@ Popup’taki sıfırlama seçeneklerini kullanın. Önce JSON dışa aktarımı 
 ayarlarınızı ve playlist ilerlemenizi daha sonra geri yükleyebilirsiniz.
 
 Sorun devam ederse tarayıcı, eklenti sürümü, site adresi ve tekrar adımlarını
-ekleyerek [GitHub Issues](https://github.com/csmutlu/playlist-uzunluk/issues)
+ekleyerek [GitHub Issues](https://github.com/csmutlu/videoexpert/issues)
 üzerinden bildirebilirsiniz. Hesap, parola, API anahtarı veya kişisel veri paylaşmayın.
 
 ## Gizlilik ve izinler
@@ -448,6 +462,9 @@ Zorunlu izinler:
 
 - `storage`: ayarlar ve playlist ilerlemesi
 - `scripting`: evrensel denetleyiciyi açık sekmeye uygulamak
+- `tabs`: ses çalan sekmelerin başlığını ve durumunu popup’ta göstermek
+- Chromium’da `activeTab`, `tabCapture` ve `offscreen`: yalnızca kullanıcı popup’taki
+  Audio Master ayarını değiştirdiğinde aktif sekmenin sesini yerel olarak işlemek
 - `youtube.com`: playlist paneli ve YouTube oynatıcı entegrasyonu
 - Firefox/Zen’de `http://*/*`, `https://*/*` ve `file:///*`: Gecko’nun geçici
   MV2 eklentilerinde F5 sonrası kalıcı ve güvenilir evrensel kontrol

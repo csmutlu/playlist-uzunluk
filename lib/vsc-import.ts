@@ -1,5 +1,5 @@
 import { DEFAULT_SHORTCUTS, DEFAULT_UNIVERSAL_SETTINGS } from './constants';
-import { clampUniversalSpeed, normalizeHostname } from './universal';
+import { clampUniversalSpeed, LEGACY_KEY_CODES, normalizeHostname } from './universal';
 import type {
   ShortcutAction,
   ShortcutBinding,
@@ -69,18 +69,6 @@ const ACTION_MAP: Readonly<Record<string, ShortcutAction>> = {
  * Their older exports store only the legacy `keyCode`. These are the nine keys
  * the extension has always shipped, so a fixed table resolves them exactly.
  */
-const LEGACY_KEY_CODES: Readonly<Record<number, string>> = {
-  83: 'KeyS',
-  68: 'KeyD',
-  90: 'KeyZ',
-  88: 'KeyX',
-  82: 'KeyR',
-  71: 'KeyG',
-  86: 'KeyV',
-  77: 'KeyM',
-  74: 'KeyJ',
-};
-
 export interface VscImportResult {
   settings: UniversalControllerSettings;
   patternRules: SitePatternRule[];
