@@ -18,6 +18,11 @@ Bu dosya [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) biçimini ve
 - **Ses tonunu koruma** ayarı: hız değiştiğinde `preservesPitch` her seferinde
   yeniden uygulanır; böylece sitenin oynatıcısı bayrağı sıfırlasa bile yüksek
   hızlarda sesin tonu bozulmaz. Varsayılan olarak açıktır.
+- **Video Speed Controller’dan içe aktarma.** Popup’taki içe aktarma, o
+  eklentinin `videospeed-settings.json` dosyasını otomatik tanıyıp dönüştürür:
+  hız adımı, sarma süreleri, tercih edilen hız, modifier’lı kısayollar, gösterge
+  opaklığı/boyutu, özel CSS, ses desteği, `siteRules` ve `blacklist`. Tüm siteler
+  izni dosyadan alınmaz. Ayrıntı: [README](README.md#video-speed-controllerdan-geçiş).
 - Yeni işlemlerin arayüz metinleri desteklenen 13 dilin tamamına eklendi.
 - Proje MIT lisansıyla yayımlandı ([LICENSE](LICENSE)).
 - İngilizce belge: [README.en.md](README.en.md).

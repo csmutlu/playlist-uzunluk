@@ -3,8 +3,14 @@ import { PLAYLIST_HISTORY_LIMIT } from '../lib/constants';
 import {
   clearAllProgress,
   getPlaylistHistory,
+  getSettings,
+  getSitePatternRules,
+  getUniversalSettings,
+  importUniversalConfiguration,
+  saveUniversalSettings,
   savePlaylistHistoryEntry,
 } from '../lib/storage';
+import { DEFAULT_UNIVERSAL_SETTINGS } from '../lib/constants';
 import type { PlaylistHistoryEntry } from '../lib/types';
 
 const localValues: Record<string, unknown> = {};
@@ -78,5 +84,59 @@ describe('playlist history storage', () => {
 
     expect(await getPlaylistHistory()).toEqual([]);
     expect(localValues['progress:PL-1']).toBeUndefined();
+  });
+});
+
+describe('controller settings import', () => {
+  it('detects a Video Speed Controller export and persists the conversion', async () => {
+    // The user already granted all-site access here; importing must not undo it.
+    await saveUniversalSettings({ ...DEFAULT_UNIVERSAL_SETTINGS, enabled: true });
+
+    const source = await importUniversalConfiguration(JSON.stringify({
+      schemaVersion: 1,
+      rememberSpeed: true,
+      audioBoolean: false,
+      controllerButtonSize: 17,
+      keyBindings: [
+        { action: 'slower', code: 'KeyS', keyCode: 83, value: 0.25 },
+        { action: 'advance', code: 'KeyX', keyCode: 88, value: 20 },
+        { action: 'fast', code: 'KeyG', keyCode: 71, value: 2.5 },
+      ],
+      siteRules: [{ pattern: 'udemy.com', enabled: true, speed: 1.75 }],
+      blacklist: 'imgur.com',
+    }));
+
+    expect(source).toBe('videospeed');
+    const settings = await getUniversalSettings();
+    expect(settings.speedStep).toBe(0.25);
+    expect(settings.advanceSeconds).toBe(20);
+    expect(settings.audioEnabled).toBe(false);
+    expect(settings.controllerSize).toBe(17);
+    expect(settings.rememberPerSite).toBe(true);
+    expect(settings.enabled).toBe(true);
+
+    // Their `fast` value becomes our preferred speed.
+    expect((await getSettings()).defaultSpeed).toBe(2.5);
+
+    const rules = await getSitePatternRules();
+    expect(rules.find((rule) => rule.pattern === 'udemy.com')?.defaultSpeed).toBe(1.75);
+    expect(rules.find((rule) => rule.pattern === 'imgur.com')?.enabled).toBe(false);
+  });
+
+  it('still accepts our own export format', async () => {
+    const source = await importUniversalConfiguration(JSON.stringify({
+      kind: 'playlist-zamani-universal',
+      settings: { ...DEFAULT_UNIVERSAL_SETTINGS, speedStep: 0.5 },
+      patternRules: [],
+    }));
+
+    expect(source).toBe('playlist-zamani');
+    expect((await getUniversalSettings()).speedStep).toBe(0.5);
+  });
+
+  it('rejects an unrelated JSON file', async () => {
+    await expect(
+      importUniversalConfiguration(JSON.stringify({ hello: 'world' })),
+    ).rejects.toThrow();
   });
 });

@@ -247,6 +247,23 @@ tekrarlar.
 pencereye alabilir veya geri getirebilirsiniz. Tarayıcı ya da oynatıcı PiP’i
 engelliyorsa rozet `!` gösterir.
 
+### Video Speed Controller’dan geçiş
+
+Kısayollarınızı ve site kurallarınızı elle kurmanız gerekmez.
+
+1. Video Speed Controller’ın ayarlar sayfasını açın ve **Export settings** ile
+   `videospeed-settings.json` dosyasını indirin.
+2. Playlist Zamanı popup’ında evrensel hız kontrolünü açın.
+3. **Kontrol ayarlarını içe aktar** ile aynı dosyayı seçin. Dosya otomatik tanınır.
+
+Aktarılanlar: hız adımı, geri/ileri sarma süreleri, tercih edilen hız (`fast`),
+kısayol tuşları ve modifier kombinasyonları, gösterge opaklığı ve boyutu, özel
+CSS, ses desteği, tuş yakalama tercihi, `siteRules` ve `blacklist` girdileri.
+
+`slower`/`faster`/`rewind`/`advance`/`reset`/`fast`/`display`/`mark`/`jump`
+işlemlerinin karşılıkları birebirdir. Tanınmayan bir işlem varsa atlanır.
+Tüm siteler izni dosyadan **alınmaz**; bu yalnızca popup’taki anahtarla verilir.
+
 ### Hızı zorla sıfırlayan siteler
 
 Bazı canlı yayın ve platform oynatıcıları hızı tekrar `1x` yapabilir.

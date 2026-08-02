@@ -260,6 +260,25 @@ Assign the **Picture-in-picture** action to a key to send the active video to th
 floating window or bring it back. If the browser or the player blocks
 picture-in-picture, the badge shows `!`.
 
+### Migrating from Video Speed Controller
+
+You do not have to rebuild your shortcuts and site rules by hand.
+
+1. Open Video Speed Controller's options page and use **Export settings** to
+   download `videospeed-settings.json`.
+2. Turn on universal speed control in the Playlist Zamanı popup.
+3. Choose the same file under **Import controller settings**. It is detected
+   automatically.
+
+What carries over: speed step, rewind/forward durations, preferred speed
+(`fast`), shortcut keys including modifier chords, indicator opacity and size,
+custom CSS, audio support, the key-capture preference, and both `siteRules` and
+`blacklist` entries.
+
+The `slower`, `faster`, `rewind`, `advance`, `reset`, `fast`, `display`, `mark`
+and `jump` actions map one to one. Any action we do not recognise is skipped.
+All-site permission is never taken from a file; only the popup switch grants it.
+
 ### Sites that force the speed back
 
 Some live stream and platform players reset the speed to `1x`.

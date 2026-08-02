@@ -7,6 +7,7 @@ import {
   UNIVERSAL_SITE_HISTORY_LIMIT,
 } from './constants';
 import { clampSpeed } from './duration';
+import { convertVideoSpeedSettings, isVideoSpeedExport } from './vsc-import';
 import {
   SCHEMA_VERSION,
   SUPPORTED_LOCALES,
@@ -342,13 +343,24 @@ export async function exportUniversalConfiguration(): Promise<string> {
   }, null, 2);
 }
 
-export async function importUniversalConfiguration(content: string): Promise<void> {
+/**
+ * Accepts our own export and Video Speed Controller's `videospeed-settings.json`
+ * so switching does not mean rebuilding every shortcut and site rule by hand.
+ * Returns the source it recognised.
+ */
+export async function importUniversalConfiguration(
+  content: string,
+): Promise<'playlist-zamani' | 'videospeed'> {
   const parsed = JSON.parse(content) as {
     kind?: string;
     settings?: Partial<UniversalControllerSettings>;
     rules?: Record<string, SiteMediaRule>;
     patternRules?: SitePatternRule[];
   };
+  if (isVideoSpeedExport(parsed)) {
+    await importVideoSpeedConfiguration(parsed);
+    return 'videospeed';
+  }
   if (parsed.kind !== 'playlist-zamani-universal' || !parsed.settings) {
     throw new Error('Invalid universal controller configuration');
   }
@@ -368,6 +380,24 @@ export async function importUniversalConfiguration(content: string): Promise<voi
   data.patternRules = Array.isArray(parsed.patternRules)
     ? parsed.patternRules.slice(0, 100)
     : [];
+  await saveUniversalSiteData(data);
+  return 'playlist-zamani';
+}
+
+async function importVideoSpeedConfiguration(parsed: unknown): Promise<void> {
+  const converted = convertVideoSpeedSettings(parsed);
+  const current = await getUniversalSettings();
+  await saveUniversalSettings(normalizeUniversalSettings({
+    ...converted.settings,
+    // All-site access is granted through the popup switch, never through a file.
+    enabled: current.enabled,
+  }));
+  if (converted.preferredSpeed !== null) {
+    const settings = await getSettings();
+    await saveSettings({ ...settings, defaultSpeed: converted.preferredSpeed });
+  }
+  const data = await getUniversalSiteData();
+  data.patternRules = converted.patternRules;
   await saveUniversalSiteData(data);
 }
 

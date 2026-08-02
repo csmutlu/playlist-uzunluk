@@ -446,14 +446,19 @@ export function App() {
   const uploadUniversalSettings = async (file: File | undefined) => {
     if (!file) return;
     try {
-      await importUniversalConfiguration(await file.text());
-      const [nextUniversal, nextRules] = await Promise.all([
+      const source = await importUniversalConfiguration(await file.text());
+      const [nextUniversal, nextRules, nextSettings] = await Promise.all([
         getUniversalSettings(),
         getSitePatternRules(),
+        getSettings(),
       ]);
       setUniversal(nextUniversal);
       setSitePatternRules(nextRules);
-      setStatus(ut(locale, 'settingsImported'));
+      setSettings(nextSettings);
+      setStatus(ut(
+        locale,
+        source === 'videospeed' ? 'videoSpeedImported' : 'settingsImported',
+      ));
     } catch {
       setStatus(ut(locale, 'invalidSettings'));
     }
@@ -809,6 +814,7 @@ export function App() {
                 {ut(locale, 'resetController')}
               </button>
             </div>
+            <p class="hint">{ut(locale, 'importSettingsHint')}</p>
             <div class="grid two">
               <label>
                 <span>{ut(locale, 'indicator')}</span>
