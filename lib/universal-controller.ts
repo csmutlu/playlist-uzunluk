@@ -616,7 +616,10 @@ export class UniversalMediaController {
       this.desiredSpeed < BUFFER_RECOVERY_MIN_SPEED
     ) return;
     const goal = recoveryBufferGoal(media, this.desiredSpeed);
-    if (event.type === 'stalled' && bufferedSecondsAhead(media) >= goal) return;
+    // A full buffer means the decoder, not the network, is behind. Dropping to
+    // 1x cannot refill what is already there, and at high rates the browser
+    // stalls often enough that doing so would pin playback near 1x.
+    if (bufferedSecondsAhead(media) >= goal) return;
     if (this.recoveringMedia.has(media)) return;
     this.recoveringMedia.add(media);
     this.applyRate(media, BUFFER_RECOVERY_RATE, false);

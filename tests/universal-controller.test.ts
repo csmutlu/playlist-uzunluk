@@ -236,6 +236,40 @@ describe('UniversalMediaController', () => {
     controller.dispose();
   });
 
+  it('does not drop to 1x when the decoder stalls on a full buffer', async () => {
+    const video = document.createElement('video');
+    Object.defineProperties(video, {
+      currentTime: { configurable: true, writable: true, value: 10 },
+      duration: { configurable: true, value: 600 },
+      paused: { configurable: true, value: false },
+      readyState: { configurable: true, value: HTMLMediaElement.HAVE_ENOUGH_DATA },
+      buffered: {
+        configurable: true,
+        // 90 seconds are ready ahead: the network is not the bottleneck.
+        value: { length: 1, start: () => 0, end: () => 100 },
+      },
+    });
+    document.body.append(video);
+    const controller = new UniversalMediaController({
+      channel: 'decoder-stall',
+      hostname: 'example.com',
+      settings: { ...DEFAULT_UNIVERSAL_SETTINGS, enabled: true },
+      extensionSettings: { ...DEFAULT_SETTINGS, defaultSpeed: 16 },
+      rule: null,
+      rememberedSpeed: null,
+      saveSpeed: async () => undefined,
+    });
+    controller.start();
+    await settleDiscovery();
+    expect(video.playbackRate).toBe(16);
+
+    video.dispatchEvent(new Event('waiting'));
+    expect(video.playbackRate).toBe(16);
+    video.dispatchEvent(new Event('stalled'));
+    expect(video.playbackRate).toBe(16);
+    controller.dispose();
+  });
+
   it('does not apply VOD buffer recovery to live streams', async () => {
     const video = document.createElement('video');
     Object.defineProperties(video, {

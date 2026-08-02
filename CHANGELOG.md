@@ -24,6 +24,21 @@ Bu dosya [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) biçimini ve
 
 ### Düzeltildi
 
+- **Yüksek hızlarda hız kaybı.** Tampon kurtarma yalnızca `stalled` olayında
+  tampon doluluğunu kontrol ediyor, `waiting` olayında koşulsuz `1x`'e
+  düşüyordu. Yüksek hızlarda tarayıcı ağ değil kod çözücü geri kaldığı için
+  sık `waiting` yayar; sonuçta eklenti hızı fiilen `1x`'e kilitliyordu.
+  Ölçüm (Brave, 60 sn'lik gerçek klip, 4 sn pencere):
+
+  | İstenen | Öncesi | Sonrası | Eklentisiz |
+  | --- | --- | --- | --- |
+  | 4x | 3.47x | 4.00x | — |
+  | 8x | 8.01x | 7.99x | 7.91x |
+  | 16x | 1.03x | 9.97x | 14.99x |
+
+  Tampon gerçekten azaldığında kurtarma eskisi gibi devreye girer; `16x` ile
+  eklentisiz `14.99x` arasındaki fark bu kasıtlı takılma korumasından gelir.
+
 - Hız rozetinin üzerindeyken sayfanın arka planda değişmesi rozeti soluklaştırıyor
   ve `−`/`+` düğmelerine tıklamayı zorlaştırıyordu. Rozet artık fare üzerindeyken
   yalnızca fare ayrıldıktan sonra soluklaşır.

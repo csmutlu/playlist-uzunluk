@@ -147,6 +147,73 @@ try {
     `Idle CPU overhead was ${idleOverheadMs.toFixed(1)} ms over 2 seconds`,
   );
 
+  // Real playback on a healthy buffer: a fast rate must actually play fast and
+  // must not freeze or pause. This does not exercise buffer recovery -- the
+  // routed clip is served instantly, so the browser never emits `waiting`. The
+  // recovery tuning itself is guarded by the unit tests in
+  // tests/universal-controller.test.ts.
+  const speedClip = await fs.readFile(
+    path.join(projectRoot, 'scripts', 'fixtures', 'speed-clip.webm'),
+  );
+  const clipPage = await context.newPage();
+  await clipPage.route('https://stress.example/speed-clip.webm', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'video/webm',
+      headers: { 'accept-ranges': 'bytes' },
+      body: speedClip,
+    }),
+  );
+  await clipPage.route('https://stress.example/clip', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'text/html',
+      body: '<!doctype html><meta charset="utf-8"><title>Speed</title><body><video id="clip" src="https://stress.example/speed-clip.webm" style="width:640px;height:360px" muted></video></body>',
+    }),
+  );
+  await clipPage.goto('https://stress.example/clip');
+  await worker.evaluate(async () => {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab?.id === undefined) throw new Error('Clip tab was not found');
+    await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      files: ['/universal.js'],
+      injectImmediately: true,
+    });
+  });
+  await clipPage.waitForFunction(
+    () => {
+      const video = document.querySelector('#clip');
+      return video && Number.isFinite(video.duration) && video.duration > 0;
+    },
+    undefined,
+    { timeout: 20_000 },
+  );
+  await clipPage.locator('#clip').dispatchEvent('pointerdown');
+  await clipPage.evaluate(() => document.querySelector('#clip').play());
+  await clipPage.keyboard.press('r');
+  for (let index = 0; index < 30; index += 1) await clipPage.keyboard.press('d');
+
+  const rateStart = await clipPage.evaluate(() => document.querySelector('#clip').currentTime);
+  const rateWall = Date.now();
+  await clipPage.waitForTimeout(3_000);
+  const played = await clipPage.evaluate(() => ({
+    currentTime: document.querySelector('#clip').currentTime,
+    paused: document.querySelector('#clip').paused,
+  }));
+  const effectiveRate =
+    (played.currentTime - rateStart) / ((Date.now() - rateWall) / 1_000);
+
+  assert(!played.paused, 'A fast playback rate must not pause the media');
+  assert(
+    played.currentTime - rateStart > 0.5,
+    'Playback froze while the media was sped up',
+  );
+  assert(
+    effectiveRate > 3.5,
+    `4x playback only advanced at ${effectiveRate.toFixed(2)}x on a fully buffered clip`,
+  );
+
   const universalBytes = (await fs.stat(
     path.join(builtExtensionPath, 'universal.js'),
   )).size;
@@ -160,6 +227,7 @@ try {
     baselineTaskMsOver2s: Number(baselineTaskMs.toFixed(2)),
     idleTaskMsOver2s: Number(idleTaskMs.toFixed(2)),
     idleOverheadMsOver2s: Number(idleOverheadMs.toFixed(2)),
+    effectiveRateAt4x: Number(effectiveRate.toFixed(2)),
     universalBytes,
   }, null, 2));
 } finally {
