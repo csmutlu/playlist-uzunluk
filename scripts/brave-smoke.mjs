@@ -20,6 +20,7 @@ smokeManifest.host_permissions = [
 ];
 await fs.writeFile(smokeManifestPath, JSON.stringify(smokeManifest));
 const playlistId = 'PL-playlist-zamani-smoke';
+const tinyClip = await fs.readFile(path.join(projectRoot, 'scripts', 'fixtures', 'tiny-clip.webm'));
 
 const fixture = `<!doctype html>
 <html lang="en">
@@ -89,6 +90,14 @@ try {
   );
   assert.match(panelText, /2\/2/);
 
+  await page.route('https://cdn.example.test/media/tiny-clip.webm', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'video/webm',
+      headers: { 'accept-ranges': 'bytes' },
+      body: tinyClip,
+    }),
+  );
   await page.route('https://player.example.test/**', (route) =>
     route.fulfill({
       status: 200,
@@ -430,6 +439,110 @@ try {
     'Closed Shadow DOM theater exit must restore the original style',
   );
 
+  await worker.evaluate(async () => {
+    const key = 'universalSettings:v1';
+    const stored = (await chrome.storage.sync.get(key))[key] ?? {};
+    const bind = (id, action, code) => ({
+      id,
+      action,
+      code,
+      enabled: true,
+      alt: false,
+      ctrl: false,
+      meta: false,
+      shift: false,
+      ...(action.startsWith('frame') ? { value: 25 } : {}),
+    });
+    await chrome.storage.sync.set({
+      [key]: {
+        ...stored,
+        customShortcuts: [
+          bind('smoke-loop', 'loop', 'KeyL'),
+          bind('smoke-frame-forward', 'frameForward', 'Period'),
+          bind('smoke-frame-back', 'frameBack', 'Comma'),
+        ],
+      },
+    });
+  });
+  await page.waitForTimeout(150);
+
+  // Frame stepping and A→B looping need a genuinely seekable video, so serve the
+  // committed 4 second / 25 fps clip instead of faking the timeline.
+  await page.evaluate(() => {
+    const video = document.createElement('video');
+    video.id = 'universal-timeline-fixture';
+    video.src = 'https://cdn.example.test/media/tiny-clip.webm';
+    video.preload = 'auto';
+    video.style.cssText = 'display:block;width:640px;height:360px';
+    document.body.append(video);
+  });
+  await page.waitForFunction(
+    () => {
+      const video = document.querySelector('#universal-timeline-fixture');
+      return video && Number.isFinite(video.duration) && video.seekable.length > 0;
+    },
+    undefined,
+    { timeout: 10_000 },
+  );
+  await page.waitForTimeout(250);
+  await page.locator('#universal-timeline-fixture').dispatchEvent('pointerdown');
+
+  const timeOf = () =>
+    page.locator('#universal-timeline-fixture').evaluate((video) => video.currentTime);
+  const seekTo = (seconds) =>
+    page.locator('#universal-timeline-fixture').evaluate(
+      (video, value) =>
+        new Promise((resolve) => {
+          video.addEventListener('seeked', resolve, { once: true });
+          video.currentTime = value;
+        }),
+      seconds,
+    );
+
+  await seekTo(1);
+  await page.keyboard.press('.');
+  await page.waitForTimeout(150);
+  const afterForward = await timeOf();
+  assert(
+    Math.abs(afterForward - 1.04) < 0.02,
+    `Next frame must advance by one 25 fps frame, got ${afterForward}`,
+  );
+  await page.keyboard.press(',');
+  await page.waitForTimeout(150);
+  const afterBack = await timeOf();
+  assert(
+    Math.abs(afterBack - 1) < 0.02,
+    `Previous frame must step back by one frame, got ${afterBack}`,
+  );
+
+  await seekTo(1);
+  await page.keyboard.press('l');
+  await seekTo(2);
+  await page.keyboard.press('l');
+  await seekTo(3);
+  await page.waitForTimeout(250);
+  const loopedTime = await timeOf();
+  assert(
+    Math.abs(loopedTime - 1) < 0.1,
+    `An armed A→B loop must seek back to A, got ${loopedTime}`,
+  );
+
+  await page.keyboard.press('l');
+  await seekTo(3);
+  await page.waitForTimeout(250);
+  const releasedTime = await timeOf();
+  assert(
+    Math.abs(releasedTime - 3) < 0.1,
+    `A third press must release the loop, got ${releasedTime}`,
+  );
+
+  await page.keyboard.press('d');
+  assert.equal(
+    await page.locator('#universal-timeline-fixture').evaluate((video) => video.preservesPitch),
+    true,
+    'Speed changes must keep the original pitch',
+  );
+
   const popup = await context.newPage();
   await popup.goto(`chrome-extension://${extensionId}/popup.html`);
   await popup.locator('.playlist-item').waitFor({ state: 'visible', timeout: 5_000 });
@@ -437,7 +550,7 @@ try {
   assert.equal(await popup.locator('.playlist-item .continue').count(), 1);
 
   console.log(
-    'Brave smoke test passed: native YouTube T, rebound extension theater key, single cross-frame indicator, held D/S, 16x clamp, iframe/closed-shadow theater mode, input guard and Playlistlerim.',
+    'Brave smoke test passed: native YouTube T, rebound extension theater key, single cross-frame indicator, held D/S, 16x clamp, iframe/closed-shadow theater mode, frame stepping, A→B loop, pitch preservation, input guard and Playlistlerim.',
   );
 } finally {
   await context?.close();

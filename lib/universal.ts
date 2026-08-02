@@ -1,4 +1,5 @@
 import {
+  DEFAULT_FRAME_RATE,
   DEFAULT_SHORTCUTS,
   UNIVERSAL_MAX_SPEED,
   UNIVERSAL_MIN_SPEED,
@@ -125,6 +126,38 @@ export function isEditableTarget(target: EventTarget | null): boolean {
     return true;
   }
   return Boolean(target instanceof HTMLElement && target.isContentEditable);
+}
+
+export interface LoopMark {
+  start: number;
+  end?: number;
+}
+
+/**
+ * A→B loop state machine. The first press marks A, the second marks B and the
+ * third clears the loop. Marking a point before A re-arms A instead of creating
+ * an inverted range.
+ */
+export function advanceLoop(current: LoopMark | null, time: number): LoopMark | null {
+  if (!Number.isFinite(time) || time < 0) return current;
+  if (!current) return { start: time };
+  if (current.end !== undefined) return null;
+  if (time - current.start < 0.05) return { start: time };
+  return { start: current.start, end: time };
+}
+
+/** Position to seek back to, or null when playback is still inside the loop. */
+export function loopSeekTarget(loop: LoopMark | null, currentTime: number): number | null {
+  if (loop?.end === undefined) return null;
+  if (currentTime < loop.end && currentTime >= loop.start - 0.5) return null;
+  return loop.start;
+}
+
+export function frameStepSeconds(framesPerSecond: number): number {
+  const fps = Number.isFinite(framesPerSecond) && framesPerSecond > 0
+    ? Math.min(240, Math.max(1, framesPerSecond))
+    : DEFAULT_FRAME_RATE;
+  return 1 / fps;
 }
 
 export function isSeekable(media: HTMLMediaElement): boolean {

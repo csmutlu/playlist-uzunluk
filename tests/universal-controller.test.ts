@@ -4,6 +4,7 @@ import {
   DEFAULT_UNIVERSAL_SETTINGS,
 } from '../lib/constants';
 import { UniversalMediaController } from '../lib/universal-controller';
+import type { CustomShortcutAction, CustomShortcutBinding } from '../lib/types';
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -18,6 +19,35 @@ afterEach(() => {
 async function settleDiscovery(): Promise<void> {
   await vi.runOnlyPendingTimersAsync();
   await Promise.resolve();
+}
+
+function seekableVideo(duration: number): HTMLVideoElement {
+  const video = document.createElement('video');
+  Object.defineProperties(video, {
+    currentTime: { configurable: true, writable: true, value: 0 },
+    duration: { configurable: true, value: duration },
+    seekable: { configurable: true, value: { length: 1, start: () => 0, end: () => duration } },
+    readyState: { configurable: true, value: HTMLMediaElement.HAVE_ENOUGH_DATA },
+  });
+  return video;
+}
+
+function customShortcut(
+  action: CustomShortcutAction,
+  code: string,
+  value?: number,
+): CustomShortcutBinding {
+  return {
+    id: `${action}-${code}`,
+    action,
+    enabled: true,
+    code,
+    alt: false,
+    ctrl: false,
+    meta: false,
+    shift: false,
+    ...(value === undefined ? {} : { value }),
+  };
 }
 
 describe('UniversalMediaController', () => {
@@ -391,6 +421,114 @@ describe('UniversalMediaController', () => {
     }));
     expect(frame.style.position).toBe('');
     expect(frame.style.width).toBe('560px');
+    controller.dispose();
+  });
+
+  it('loops between A and B and releases the media when cleared', async () => {
+    const video = seekableVideo(120);
+    document.body.append(video);
+    const controller = new UniversalMediaController({
+      channel: 'loop',
+      hostname: 'example.com',
+      settings: {
+        ...DEFAULT_UNIVERSAL_SETTINGS,
+        enabled: true,
+        customShortcuts: [customShortcut('loop', 'KeyL')],
+      },
+      extensionSettings: DEFAULT_SETTINGS,
+      rule: null,
+      rememberedSpeed: null,
+      saveSpeed: async () => undefined,
+    });
+    controller.start();
+    await settleDiscovery();
+
+    video.currentTime = 10;
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyL' }));
+    video.currentTime = 25;
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyL' }));
+
+    video.currentTime = 20;
+    video.dispatchEvent(new Event('timeupdate'));
+    expect(video.currentTime).toBe(20);
+
+    video.currentTime = 26;
+    video.dispatchEvent(new Event('timeupdate'));
+    expect(video.currentTime).toBe(10);
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyL' }));
+    video.currentTime = 40;
+    video.dispatchEvent(new Event('timeupdate'));
+    expect(video.currentTime).toBe(40);
+    controller.dispose();
+  });
+
+  it('steps frames on a paused video and keeps playback stopped', async () => {
+    const video = seekableVideo(120);
+    document.body.append(video);
+    const pause = vi.fn(() => {
+      Object.defineProperty(video, 'paused', { configurable: true, value: true });
+    });
+    video.pause = pause;
+    Object.defineProperty(video, 'paused', { configurable: true, value: false });
+    const controller = new UniversalMediaController({
+      channel: 'frames',
+      hostname: 'example.com',
+      settings: {
+        ...DEFAULT_UNIVERSAL_SETTINGS,
+        enabled: true,
+        customShortcuts: [
+          customShortcut('frameForward', 'Period', 25),
+          customShortcut('frameBack', 'Comma', 25),
+        ],
+      },
+      extensionSettings: DEFAULT_SETTINGS,
+      rule: null,
+      rememberedSpeed: null,
+      saveSpeed: async () => undefined,
+    });
+    controller.start();
+    await settleDiscovery();
+
+    video.currentTime = 10;
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Period' }));
+    expect(pause).toHaveBeenCalledTimes(1);
+    expect(video.currentTime).toBeCloseTo(10.04, 5);
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Comma' }));
+    expect(video.currentTime).toBeCloseTo(10, 5);
+    controller.dispose();
+  });
+
+  it('keeps the original pitch unless the setting is turned off', async () => {
+    const video = document.createElement('video');
+    // jsdom omits preservesPitch, so mirror what every supported browser exposes.
+    Object.defineProperty(video, 'preservesPitch', {
+      configurable: true,
+      writable: true,
+      value: false,
+    });
+    document.body.append(video);
+    const controller = new UniversalMediaController({
+      channel: 'pitch',
+      hostname: 'example.com',
+      settings: { ...DEFAULT_UNIVERSAL_SETTINGS, enabled: true },
+      extensionSettings: { ...DEFAULT_SETTINGS, defaultSpeed: 2 },
+      rule: null,
+      rememberedSpeed: null,
+      saveSpeed: async () => undefined,
+    });
+    controller.start();
+    await settleDiscovery();
+    expect(video.preservesPitch).toBe(true);
+
+    controller.update(
+      { ...DEFAULT_UNIVERSAL_SETTINGS, enabled: true, preservePitch: false },
+      { ...DEFAULT_SETTINGS, defaultSpeed: 1.5 },
+      null,
+      null,
+    );
+    expect(video.preservesPitch).toBe(false);
     controller.dispose();
   });
 

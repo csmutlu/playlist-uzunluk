@@ -1,5 +1,7 @@
 # Playlist Zamanı
 
+**Türkçe** · [English](README.en.md)
+
 YouTube playlistlerinin toplam ve kalan süresini hesaplayan, video ve ses hızını
 izin verdiğiniz sitelerde klavyeden yönetmenizi sağlayan hafif tarayıcı eklentisi.
 
@@ -51,6 +53,10 @@ uyumludur. Hesaplama ve medya kontrolü cihazda yapılır. Analitik, reklam veya
 - Oynatıcı hızı sürekli `1x` yapıyorsa isteğe bağlı **hız kilidi** ile seçilen hızı korur.
 - Canlı yayında hız değişimini dener; seek desteklenmiyorsa sarma ve işaret özelliklerini zorlamaz.
 - `T` ile gerçek tam ekran açmadan videoyu sekmenin içerik alanına yayar.
+- Yüksek hızlarda sesin tonunu korur; site oynatıcısı bayrağı sıfırlasa bile
+  her hız değişiminde yeniden uygular.
+- A→B döngüsüyle bir bölümü tekrarlar, duraklatılmış videoyu kare kare ilerletir.
+- Aktif videoyu pencere içinde pencere (PiP) moduna alır.
 - Hız rozeti sürüklenebilir; boyutu, opaklığı ve görünürlüğü ayarlanabilir.
 - Bütün kısayollar değiştirilebilir ve özel kısayollar eklenebilir.
 
@@ -217,6 +223,30 @@ Playlist Zamanı’nın sekme içi sinema modunu YouTube’da da kullanmak ister
 popup’taki kısayol düzenleyiciden bu işleme `Y`, `Shift+T` veya başka bir tuş
 atayabilirsiniz. Diğer sitelerde varsayılan `T` davranışı değişmez.
 
+### A→B döngüsü
+
+Popup’taki **Ek kısayollar** bölümünden **A→B döngüsü** işlemini bir tuşa atayın.
+
+1. İlk basış döngünün başlangıcını (`A`) işaretler.
+2. İkinci basış bitişi (`B`) işaretler ve bölüm tekrarlanmaya başlar.
+3. Üçüncü basış döngüyü kaldırır.
+
+`A` noktasından önceki bir konumu işaretlemek ters aralık oluşturmaz; başlangıcı
+yeniden kurar. Medya sayfadan ayrıldığında döngü otomatik olarak serbest bırakılır.
+
+### Kare kare ilerleme
+
+**Önceki kare** ve **Sonraki kare** işlemlerini birer tuşa atayın. Her basış
+videoyu duraklatır ve tek kare ilerletir. Kısayolun değer alanı kare hızını
+belirler (varsayılan `30`, yani `1/30` saniyelik adım). Tuşu basılı tutmak adımı
+tekrarlar.
+
+### Pencere içinde pencere
+
+**Pencere içinde pencere** işlemini bir tuşa atayarak aktif videoyu yüzen
+pencereye alabilir veya geri getirebilirsiniz. Tarayıcı ya da oynatıcı PiP’i
+engelliyorsa rozet `!` gösterir.
+
 ### Hızı zorla sıfırlayan siteler
 
 Bazı canlı yayın ve platform oynatıcıları hızı tekrar `1x` yapabilir.
@@ -244,8 +274,10 @@ geri uygulanır; sürekli çalışan bir kontrol döngüsü kullanılmaz.
 | `T` | Sekme içi sinema modunu aç/kapat; YouTube’da sitenin kendi `T` işlevine bırakılır |
 | `V` | Hız rozetini göster/gizle |
 
-Kısayol düzenleyiciden oynat/duraklat, sessize al, ses artır/azalt gibi işlemler
-de eklenebilir. Her kısayola farklı hız, adım, sarma veya ses değeri verilebilir.
+Kısayol düzenleyiciden oynat/duraklat, sessize al, ses artır/azalt, A→B döngüsü,
+kare kare ilerleme ve pencere içinde pencere işlemleri de eklenebilir. Bu ek
+işlemlerin varsayılan tuşu yoktur; mevcut kısayollarınız değişmez. Her kısayola
+farklı hız, adım, sarma, ses veya kare hızı değeri verilebilir.
 
 Metin alanı, arama kutusu, seçim menüsü veya `contenteditable` alan odaktayken
 kısayollar çalışmaz. `Ctrl`, `Cmd` ve `Alt` içeren kombinasyonlar siz özellikle
@@ -261,6 +293,7 @@ tanımlamadıkça yok sayılır.
 - Hız kilidi
 - Hız adımı ile ileri/geri sarma süresi
 - Preset hızlar ve özel hız girişi
+- Yüksek hızlarda sesin tonunu koruma
 - Kısayol düzenleyici ve varsayılanlara dönme
 - Rozet boyutu, opaklığı ve özel CSS
 - Alan adı, wildcard ve regex tabanlı site kuralları
@@ -358,7 +391,8 @@ reddediyorsa eklenti sonsuz tekrar yapmaz; bu durumda site için hız değiştir
 ### İleri/geri sarma çalışmıyor
 
 Canlı yayın veya süresiz medya seek kabul etmeyebilir. Bu durumda `Z`, `X`, `M`
-ve `J` işlemleri güvenli biçimde devre dışı kalır.
+ve `J` işlemleri güvenli biçimde devre dışı kalır. Kare kare ilerleme ve A→B
+döngüsü de aynı nedenle çalışmaz.
 
 ### Playlist sonucu eksik
 
@@ -460,3 +494,8 @@ Testler geçici profiller kullanır; kişisel tarayıcı profillerine veya veril
 - Güvenlik açığını herkese açık issue yerine [SECURITY.md](SECURITY.md) içindeki
   yöntemle bildirin.
 - Mağaza açıklaması için [STORE_LISTING.md](STORE_LISTING.md) dosyasına bakın.
+- Sürüm geçmişi [CHANGELOG.md](CHANGELOG.md) dosyasındadır.
+
+## Lisans
+
+[MIT](LICENSE)

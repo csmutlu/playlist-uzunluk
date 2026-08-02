@@ -33,6 +33,39 @@ export default defineUnlistedScript(() => {
   const canSeek = (item: HTMLMediaElement) =>
     Number.isFinite(item.duration) && item.duration > 0 && item.seekable.length > 0;
 
+  let loop: { item: HTMLMediaElement; start: number; end?: number } | null = null;
+
+  const enforceLoop = (event: Event) => {
+    const item = event.currentTarget;
+    if (
+      !(item instanceof HTMLMediaElement) ||
+      loop?.item !== item ||
+      loop.end === undefined ||
+      (item.currentTime < loop.end && item.currentTime >= loop.start - 0.5)
+    ) return;
+    item.currentTime = loop.start;
+  };
+
+  const releaseLoop = () => {
+    if (!loop) return;
+    loop.item.removeEventListener('timeupdate', enforceLoop);
+    loop.item.removeEventListener('seeked', enforceLoop);
+    loop = null;
+  };
+
+  const toggleLoop = (item: HTMLMediaElement) => {
+    const current = loop?.item === item ? loop : null;
+    releaseLoop();
+    if (current?.end !== undefined) return;
+    if (current && item.currentTime - current.start >= 0.05) {
+      loop = { item, start: current.start, end: item.currentTime };
+      item.addEventListener('timeupdate', enforceLoop, { passive: true });
+      item.addEventListener('seeked', enforceLoop, { passive: true });
+      return;
+    }
+    loop = { item, start: item.currentTime };
+  };
+
   const handlePlay = (event: Event) => {
     const item = event.currentTarget;
     if (!(item instanceof HTMLMediaElement)) return;
@@ -112,6 +145,7 @@ export default defineUnlistedScript(() => {
   const cleanup = () => {
     if (disposed) return;
     disposed = true;
+    releaseLoop();
     document.removeEventListener(controlEvent, handleControl, true);
     for (const observer of observers) observer.disconnect();
     for (const item of media) {
@@ -175,6 +209,25 @@ export default defineUnlistedScript(() => {
       if (action === 'seek' && Number.isFinite(custom.detail.seconds) && canSeek(item)) {
         const seconds = Number(custom.detail.seconds);
         item.currentTime = Math.min(item.duration, Math.max(0, item.currentTime + seconds));
+        return;
+      }
+      if (action === 'frame' && Number.isFinite(custom.detail.seconds) && canSeek(item)) {
+        if (!item.paused) item.pause();
+        const seconds = Number(custom.detail.seconds);
+        item.currentTime = Math.min(item.duration, Math.max(0, item.currentTime + seconds));
+        return;
+      }
+      if (action === 'pip') {
+        if (!(item instanceof HTMLVideoElement)) {
+          report(item, { kind: 'rejected' });
+          return;
+        }
+        if (document.pictureInPictureElement === item) void document.exitPictureInPicture();
+        else void item.requestPictureInPicture().catch(() => report(item, { kind: 'rejected' }));
+        return;
+      }
+      if (action === 'loop' && canSeek(item)) {
+        toggleLoop(item);
         return;
       }
       if (action === 'mark' && canSeek(item)) {

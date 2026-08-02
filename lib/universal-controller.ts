@@ -1,3 +1,4 @@
+import { DEFAULT_FRAME_RATE } from './constants';
 import type {
   CustomShortcutAction,
   ExtensionSettings,
@@ -5,14 +6,18 @@ import type {
   UniversalControllerSettings,
 } from './types';
 import {
+  advanceLoop,
   clampUniversalSpeed,
   commandForKeyboardEvent,
   effectiveFightback,
+  frameStepSeconds,
   isEditableTarget,
   isSeekable,
+  loopSeekTarget,
   mediaDownloadInfo,
   roundSpeed,
   selectMedia,
+  type LoopMark,
   type MatchedShortcut,
 } from './universal';
 
@@ -56,6 +61,8 @@ const REPEATABLE_ACTIONS = new Set<CustomShortcutAction>([
   'advance',
   'volumeDown',
   'volumeUp',
+  'frameBack',
+  'frameForward',
 ]);
 
 type StyleRule = readonly [property: string, value: string];
@@ -164,6 +171,25 @@ function mediaFromTarget(target: EventTarget | null): HTMLMediaElement | null {
   return target instanceof HTMLMediaElement ? target : null;
 }
 
+/**
+ * Keeps voices natural at high speeds. Sites sometimes clear the flag on their
+ * own players, so it is reapplied with every rate change. The vendor-prefixed
+ * names cover older WebKit and Gecko builds.
+ */
+function applyPreservesPitch(media: HTMLMediaElement, preserve: boolean): void {
+  const target = media as HTMLMediaElement & {
+    mozPreservesPitch?: boolean;
+    webkitPreservesPitch?: boolean;
+  };
+  try {
+    if ('preservesPitch' in target) target.preservesPitch = preserve;
+    if ('mozPreservesPitch' in target) target.mozPreservesPitch = preserve;
+    if ('webkitPreservesPitch' in target) target.webkitPreservesPitch = preserve;
+  } catch {
+    /* Some players expose read-only shims. */
+  }
+}
+
 function overlayText(rate: number): string {
   return `${Number(rate.toFixed(2))}×`;
 }
@@ -217,6 +243,7 @@ export class UniversalMediaController {
   private saveTimer: number | null = null;
   private overlayTimer: number | null = null;
   private overlayHoverTimer: number | null = null;
+  private overlayHovered = false;
   private overlayHost: HTMLElement | null = null;
   private overlayValue: HTMLElement | null = null;
   private overlayStyle: HTMLStyleElement | null = null;
@@ -232,6 +259,8 @@ export class UniversalMediaController {
     timer: number;
   } | null = null;
   private theaterState: TheaterState | null = null;
+  private loopMedia: HTMLMediaElement | null = null;
+  private loopRange: LoopMark | null = null;
   private active = false;
   private disposed = false;
   private lastPageGestureAt = Number.NEGATIVE_INFINITY;
@@ -358,6 +387,7 @@ export class UniversalMediaController {
     window.removeEventListener('scroll', this.handleViewportChange);
     window.removeEventListener('resize', this.handleViewportChange);
     this.clearHeldShortcut();
+    this.clearLoop();
     this.exitTheater(true);
     this.stopVisibilityTracking();
     this.stopDiscovery();
@@ -518,6 +548,7 @@ export class UniversalMediaController {
 
   private untrackMedia(media: HTMLMediaElement): void {
     this.visibilityObserver?.unobserve(media);
+    if (this.loopMedia === media) this.clearLoop();
     if (this.overlayAnchor === media) {
       this.overlayAnchor = null;
       this.overlayPositionDirty = true;
@@ -738,6 +769,26 @@ export class UniversalMediaController {
       this.toggleTheater(media);
       return;
     }
+    if (action === 'pictureInPicture') {
+      void this.togglePictureInPicture(media);
+      return;
+    }
+    if (action === 'loop') {
+      this.toggleLoop(media);
+      return;
+    }
+    if (action === 'frameBack' || action === 'frameForward') {
+      const step = frameStepSeconds(value ?? DEFAULT_FRAME_RATE);
+      const seconds = action === 'frameBack' ? -step : step;
+      if (media && isSeekable(media)) {
+        if (!media.paused) media.pause();
+        media.currentTime = Math.min(media.duration, Math.max(0, media.currentTime + seconds));
+        this.showOverlay(this.desiredSpeed, action === 'frameBack' ? '◀|' : '|▶');
+      } else {
+        this.dispatchBridge({ action: 'frame', seconds });
+      }
+      return;
+    }
     if (action === 'slower') {
       const step = value ?? this.settings.speedStep;
       this.changeRate(media, roundSpeed(this.desiredSpeed - step, step));
@@ -837,6 +888,64 @@ export class UniversalMediaController {
   togglePlayback(): void {
     this.performAction('pause', this.selectedMedia());
   }
+
+  private async togglePictureInPicture(media: HTMLMediaElement | null): Promise<void> {
+    if (
+      !(media instanceof HTMLVideoElement) ||
+      typeof media.requestPictureInPicture !== 'function'
+    ) {
+      this.dispatchBridge({ action: 'pip' }, media ?? document);
+      return;
+    }
+    try {
+      if (document.pictureInPictureElement === media) await document.exitPictureInPicture();
+      else await media.requestPictureInPicture();
+      this.showOverlay(this.desiredSpeed, '⧉');
+    } catch {
+      this.showOverlay(this.desiredSpeed, '!');
+    }
+  }
+
+  /** Cycles the A→B loop: mark A, mark B and start looping, then clear. */
+  private toggleLoop(media: HTMLMediaElement | null): void {
+    if (!media || !isSeekable(media)) {
+      this.dispatchBridge({ action: 'loop' });
+      return;
+    }
+    const current = this.loopMedia === media ? this.loopRange : null;
+    const next = advanceLoop(current, media.currentTime);
+    this.clearLoop();
+    if (!next) {
+      this.showOverlay(this.desiredSpeed, '⟲✕');
+      return;
+    }
+    this.loopMedia = media;
+    this.loopRange = next;
+    if (next.end !== undefined) {
+      media.addEventListener('timeupdate', this.handleLoopTick, { passive: true });
+      media.addEventListener('seeked', this.handleLoopTick, { passive: true });
+      this.showOverlay(this.desiredSpeed, '⟲ A-B');
+      return;
+    }
+    this.showOverlay(this.desiredSpeed, '⟲ A');
+  }
+
+  private clearLoop(): void {
+    if (this.loopMedia) {
+      this.loopMedia.removeEventListener('timeupdate', this.handleLoopTick);
+      this.loopMedia.removeEventListener('seeked', this.handleLoopTick);
+    }
+    this.loopMedia = null;
+    this.loopRange = null;
+  }
+
+  private handleLoopTick = (event: Event): void => {
+    const media = mediaFromTarget(event.currentTarget);
+    if (!media || media !== this.loopMedia) return;
+    const target = loopSeekTarget(this.loopRange, media.currentTime);
+    if (target === null) return;
+    media.currentTime = target;
+  };
 
   private toggleTheater(media: HTMLMediaElement | null): void {
     if (this.theaterState) {
@@ -992,6 +1101,7 @@ export class UniversalMediaController {
 
   private applyRate(media: HTMLMediaElement, rate: number, show: boolean): void {
     const next = clampUniversalSpeed(rate);
+    applyPreservesPitch(media, this.settings.preservePitch);
     if (Math.abs(media.playbackRate - next) < 0.001) {
       this.appliedRates.set(media, next);
       if (show) this.showOverlay(next);
@@ -1161,6 +1271,7 @@ export class UniversalMediaController {
       this.performAction('reset', this.selectedMedia());
     });
     controller.addEventListener('pointerenter', () => {
+      this.overlayHovered = true;
       if (this.overlayTimer !== null) {
         window.clearTimeout(this.overlayTimer);
         this.overlayTimer = null;
@@ -1176,6 +1287,7 @@ export class UniversalMediaController {
       }, 300);
     });
     controller.addEventListener('pointerleave', () => {
+      this.overlayHovered = false;
       if (this.overlayHoverTimer !== null) window.clearTimeout(this.overlayHoverTimer);
       this.overlayHoverTimer = null;
       if (this.settings.indicatorMode === 'flash') {
@@ -1306,7 +1418,9 @@ export class UniversalMediaController {
   }
 
   private dimOverlay(): void {
-    if (!this.overlayHost) return;
+    // A background scan or a settle timer must never dim the controls out from
+    // under a pointer that is still on them.
+    if (!this.overlayHost || this.overlayHovered) return;
     const idleOpacity = Math.min(
       0.55,
       Math.max(0.24, this.settings.controllerOpacity * 0.42),
@@ -1328,6 +1442,7 @@ export class UniversalMediaController {
     if (this.overlayHoverTimer !== null) window.clearTimeout(this.overlayHoverTimer);
     this.overlayTimer = null;
     this.overlayHoverTimer = null;
+    this.overlayHovered = false;
     this.overlayHost?.remove();
     this.overlayHost = null;
     this.overlayValue = null;

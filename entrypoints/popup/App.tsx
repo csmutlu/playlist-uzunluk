@@ -643,6 +643,16 @@ export function App() {
                   />
                   <span>{ut(locale, 'wheelControl')}</span>
                 </label>
+                <label class="check">
+                  <input
+                    type="checkbox"
+                    checked={universal.preservePitch}
+                    onChange={(event) =>
+                      updateUniversal('preservePitch', event.currentTarget.checked)
+                    }
+                  />
+                  <span>{ut(locale, 'preservePitch')}</span>
+                </label>
                 <div class="grid two">
                   <label>
                     <span>{ut(locale, 'controllerOpacity')}</span>
@@ -954,6 +964,10 @@ export function App() {
                         'volumeUp',
                         'mark',
                         'jump',
+                        'loop',
+                        'frameBack',
+                        'frameForward',
+                        'pictureInPicture',
                         'theater',
                         'toggleIndicator',
                       ] as const).map((action) => (

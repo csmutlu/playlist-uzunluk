@@ -19,6 +19,7 @@ export const UNIVERSAL_MIN_SPEED = 0.07;
 export const UNIVERSAL_MAX_SPEED = 16;
 export const UNIVERSAL_SITE_HISTORY_LIMIT = 200;
 export const UNIVERSAL_HOST_ORIGINS = ['http://*/*', 'https://*/*'] as const;
+export const DEFAULT_FRAME_RATE = 30;
 export const UNIVERSAL_FILE_ORIGIN = 'file:///*' as const;
 
 const shortcut = (
@@ -58,6 +59,7 @@ export const DEFAULT_UNIVERSAL_SETTINGS: UniversalControllerSettings = {
   audioEnabled: true,
   exclusiveKeys: true,
   wheelEnabled: true,
+  preservePitch: true,
   controllerOpacity: 0.92,
   controllerSize: 13,
   customCss: '',

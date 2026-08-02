@@ -112,6 +112,7 @@ export function normalizeUniversalSettings(
     audioEnabled: settings?.audioEnabled !== false,
     exclusiveKeys: settings?.exclusiveKeys !== false,
     wheelEnabled: settings?.wheelEnabled !== false,
+    preservePitch: settings?.preservePitch !== false,
     controllerOpacity: Math.min(
       1,
       Math.max(

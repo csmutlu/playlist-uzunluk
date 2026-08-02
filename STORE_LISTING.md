@@ -29,8 +29,11 @@ Playlist Zamanı, uzun eğitim ve çalışma playlistlerini planlamayı kolayla�
   yayın; sekmeleri ve adres çubuğunu görünür tutun
 - Popup hızlı hız presetlerini veya videonun üstündeki geri, azalt, artır ve ileri
   düğmelerini kullanın; fare tekerleğiyle hızı değiştirin
-- Oynat/duraklat, sessize al ve ses seviyesi dahil kendi değerine sahip ek
-  klavye kısayolları oluşturun
+- Oynat/duraklat, sessize al, ses seviyesi, A→B döngüsü, kare kare ilerleme ve
+  pencere içinde pencere dahil kendi değerine sahip ek klavye kısayolları oluşturun
+- Tekrar çalışmak istediğiniz bölümü A→B döngüsüyle sürekli tekrarlatın
+- Duraklatılmış videoyu kare kare ilerletip geri alın
+- Yüksek hızlarda sesin tonu korunur; oynatıcı bu ayarı sıfırlasa bile yeniden uygulanır
 - Her sitenin hızını hatırlayın, siteye özel varsayılan belirleyin veya hız
   sıfırlayan oynatıcılarda isteğe bağlı hız kilidini açın
 - Alan adı, wildcard ve regex kuralları tanımlayın; kontrol ayarlarını JSON olarak

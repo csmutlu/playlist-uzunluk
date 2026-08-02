@@ -3,9 +3,12 @@ import { DEFAULT_SHORTCUTS } from '../lib/constants';
 import { SUPPORTED_LOCALES, type SiteMediaRule, type SitePlaybackState } from '../lib/types';
 import {
   actionForKeyboardEvent,
+  advanceLoop,
   clampUniversalSpeed,
   commandForKeyboardEvent,
+  frameStepSeconds,
   isEditableTarget,
+  loopSeekTarget,
   mediaDownloadInfo,
   resolveSiteSpeed,
   roundSpeed,
@@ -138,5 +141,38 @@ describe('universal speed helpers', () => {
     });
     expect(mediaDownloadInfo(direct).reason).toBe('drmProtected');
     expect(sanitizeDownloadFilename('../bad:name?.mp4')).toBe('bad name .mp4');
+  });
+
+  it('cycles the A→B loop through mark, range and clear', () => {
+    const a = advanceLoop(null, 12);
+    expect(a).toEqual({ start: 12 });
+
+    const range = advanceLoop(a, 30);
+    expect(range).toEqual({ start: 12, end: 30 });
+
+    expect(advanceLoop(range, 45)).toBeNull();
+  });
+
+  it('re-arms the loop start instead of creating an inverted range', () => {
+    expect(advanceLoop({ start: 40 }, 10)).toEqual({ start: 10 });
+    expect(advanceLoop({ start: 40 }, 40.01)).toEqual({ start: 40.01 });
+    expect(advanceLoop(null, Number.NaN)).toBeNull();
+  });
+
+  it('seeks back only once playback leaves an armed loop', () => {
+    const range = { start: 12, end: 30 };
+    expect(loopSeekTarget(range, 20)).toBeNull();
+    expect(loopSeekTarget(range, 30.2)).toBe(12);
+    expect(loopSeekTarget(range, 4)).toBe(12);
+    expect(loopSeekTarget({ start: 12 }, 99)).toBeNull();
+    expect(loopSeekTarget(null, 99)).toBeNull();
+  });
+
+  it('derives a frame step from the configured frame rate', () => {
+    expect(frameStepSeconds(25)).toBeCloseTo(0.04, 5);
+    expect(frameStepSeconds(60)).toBeCloseTo(1 / 60, 5);
+    expect(frameStepSeconds(0)).toBeCloseTo(1 / 30, 5);
+    expect(frameStepSeconds(Number.NaN)).toBeCloseTo(1 / 30, 5);
+    expect(frameStepSeconds(10_000)).toBeCloseTo(1 / 240, 5);
   });
 });

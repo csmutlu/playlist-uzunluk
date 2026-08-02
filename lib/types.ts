@@ -121,7 +121,11 @@ export type CustomShortcutAction =
   | 'pause'
   | 'toggleMute'
   | 'volumeDown'
-  | 'volumeUp';
+  | 'volumeUp'
+  | 'pictureInPicture'
+  | 'frameBack'
+  | 'frameForward'
+  | 'loop';
 
 export interface ShortcutBinding {
   code: string;
@@ -152,6 +156,7 @@ export interface UniversalControllerSettings {
   audioEnabled: boolean;
   exclusiveKeys: boolean;
   wheelEnabled: boolean;
+  preservePitch: boolean;
   controllerOpacity: number;
   controllerSize: number;
   customCss: string;
