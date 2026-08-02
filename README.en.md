@@ -311,6 +311,20 @@ picture-in-picture can be added from the shortcut editor. These extra actions
 have no default key, so your existing shortcuts do not change. Each shortcut can
 be given its own speed, step, seek, volume or frame-rate value.
 
+### Working alongside the site's own speed control
+
+You can keep using YouTube's speed menu or its `<` / `>` shortcuts. The extension
+accepts the change, shows the correct speed on the badge, and later `S`/`D`
+presses continue from there. The site's speed is saved to the per-site memory too.
+
+Shortcuts match on `event.code`, so they are layout independent. On a Turkish Mac
+keyboard `Shift+ö` and `Shift+ç` are the same physical keys as `Shift+,` and
+`Shift+.` on a US layout, and work on YouTube as expected. Modifiers must match
+exactly, so binding frame stepping to plain `,` and `.` does not collide with them.
+
+Even with the **speed lock** on, a change *you* make from the site's own player is
+accepted; the lock only undoes silent resets that no user input preceded.
+
 Shortcuts do not fire while a text field, search box, select menu or
 `contenteditable` area has focus. Combinations with `Ctrl`, `Cmd` and `Alt` are
 ignored unless you define them explicitly.

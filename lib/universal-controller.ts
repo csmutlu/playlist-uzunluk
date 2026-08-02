@@ -696,7 +696,13 @@ export class UniversalMediaController {
   private handleKeydown = (event: KeyboardEvent): void => {
     if (event.defaultPrevented || isEditableTarget(event.target)) return;
     const command = commandForKeyboardEvent(event, this.settings);
-    if (!command) return;
+    // A key we do not consume is still the user acting on the page. Sites change
+    // speed from their own shortcuts -- YouTube's < and > among them -- and that
+    // must not be mistaken for a silent reset and undone.
+    if (!command) {
+      this.lastPageGestureAt = performance.now();
+      return;
+    }
     if (
       command.action === 'theater' &&
       event.code === 'KeyT' &&
@@ -708,7 +714,11 @@ export class UniversalMediaController {
         this.hostname === 'youtube.com' ||
         this.hostname.endsWith('.youtube.com')
       )
-    ) return;
+    ) {
+      // Handed back to YouTube, so it counts as the user acting on the page.
+      this.lastPageGestureAt = performance.now();
+      return;
+    }
     if (this.settings.exclusiveKeys) {
       event.preventDefault();
       event.stopPropagation();

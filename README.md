@@ -296,6 +296,22 @@ kare kare ilerleme ve pencere içinde pencere işlemleri de eklenebilir. Bu ek
 işlemlerin varsayılan tuşu yoktur; mevcut kısayollarınız değişmez. Her kısayola
 farklı hız, adım, sarma, ses veya kare hızı değeri verilebilir.
 
+### Sitenin kendi hız kontrolüyle birlikte çalışma
+
+YouTube’un hız menüsünü veya `<` / `>` kısayollarını kullanmaya devam edebilirsiniz.
+Eklenti bu değişikliği kabul eder, rozette doğru hızı gösterir ve sonraki `S`/`D`
+basışları o hızdan devam eder. Site hızı, siteye özel hafızaya da kaydedilir.
+
+Kısayollar `event.code` ile eşleştiği için klavye düzeninden bağımsızdır. Türkçe
+Mac klavyesinde `Shift+ö` ve `Shift+ç`, US düzenindeki `Shift+,` ve `Shift+.` ile
+aynı tuşlardır ve YouTube’da beklendiği gibi çalışır. Modifier eşleşmesi birebir
+olduğundan, kare adımlamayı düz `,` ve `.` tuşlarına atasanız bile bu kısayollarla
+çakışmaz.
+
+**Hız kilidi** açıkken bile sitenin oynatıcısından *sizin* yaptığınız değişiklik
+kabul edilir; kilit yalnızca kullanıcı girdisi olmadan yapılan sessiz
+sıfırlamaları geri alır.
+
 Metin alanı, arama kutusu, seçim menüsü veya `contenteditable` alan odaktayken
 kısayollar çalışmaz. `Ctrl`, `Cmd` ve `Alt` içeren kombinasyonlar siz özellikle
 tanımlamadıkça yok sayılır.

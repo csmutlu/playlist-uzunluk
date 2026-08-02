@@ -458,6 +458,107 @@ describe('UniversalMediaController', () => {
     controller.dispose();
   });
 
+  it('keeps a speed the site changed from its own keyboard shortcut', async () => {
+    const video = document.createElement('video');
+    document.body.append(video);
+    const controller = new UniversalMediaController({
+      channel: 'site-keys',
+      hostname: 'example.com',
+      settings: { ...DEFAULT_UNIVERSAL_SETTINGS, enabled: true, exclusiveKeys: false },
+      extensionSettings: DEFAULT_SETTINGS,
+      rule: null,
+      rememberedSpeed: null,
+      saveSpeed: async () => undefined,
+    });
+    controller.start();
+    await settleDiscovery();
+
+    // Our own change opens the protection window.
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyD' }));
+    // Let applyRate's microtask clear its re-entrancy guard before the site acts.
+    await Promise.resolve();
+    expect(video.playbackRate).toBe(1.1);
+
+    // The user presses a key we do not own, and the site raises the speed --
+    // exactly YouTube's `>` path. It must survive.
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Period', shiftKey: true }));
+    video.playbackRate = 1.35;
+    video.dispatchEvent(new Event('ratechange'));
+    expect(video.playbackRate).toBe(1.35);
+    expect(controller.siteInfo().speed).toBe(1.35);
+    controller.dispose();
+  });
+
+  it('leaves a site shortcut alone when only the modifier differs from ours', async () => {
+    const video = seekableVideo(120);
+    document.body.append(video);
+    const controller = new UniversalMediaController({
+      channel: 'modifier-split',
+      hostname: 'youtube.com',
+      settings: {
+        ...DEFAULT_UNIVERSAL_SETTINGS,
+        enabled: true,
+        exclusiveKeys: true,
+        // The worst case: our frame stepping sits on the very keys YouTube uses
+        // for speed, which are Comma/Period on every layout including Turkish.
+        customShortcuts: [
+          customShortcut('frameForward', 'Period', 25),
+          customShortcut('frameBack', 'Comma', 25),
+        ],
+      },
+      extensionSettings: DEFAULT_SETTINGS,
+      rule: null,
+      rememberedSpeed: null,
+      saveSpeed: async () => undefined,
+    });
+    controller.start();
+    await settleDiscovery();
+
+    // Plain Period is ours: consumed, and the site must not see it.
+    video.currentTime = 10;
+    const plain = new KeyboardEvent('keydown', { code: 'Period', cancelable: true });
+    window.dispatchEvent(plain);
+    expect(video.currentTime).toBeCloseTo(10.04, 5);
+    expect(plain.defaultPrevented).toBe(true);
+
+    // Shift+Period is YouTube's: never consumed, so it reaches the page.
+    const shifted = new KeyboardEvent('keydown', {
+      code: 'Period',
+      shiftKey: true,
+      cancelable: true,
+    });
+    window.dispatchEvent(shifted);
+    expect(shifted.defaultPrevented).toBe(false);
+    expect(video.currentTime).toBeCloseTo(10.04, 5);
+    controller.dispose();
+  });
+
+  it('still undoes a silent reset that no key or pointer preceded', async () => {
+    const video = document.createElement('video');
+    document.body.append(video);
+    const controller = new UniversalMediaController({
+      channel: 'silent-reset',
+      hostname: 'example.com',
+      settings: { ...DEFAULT_UNIVERSAL_SETTINGS, enabled: true, fightbackDefault: true },
+      extensionSettings: DEFAULT_SETTINGS,
+      rule: null,
+      rememberedSpeed: null,
+      saveSpeed: async () => undefined,
+    });
+    controller.start();
+    await settleDiscovery();
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyD' }));
+    await Promise.resolve();
+    expect(video.playbackRate).toBe(1.1);
+
+    // The player resets itself with no user input at all.
+    video.playbackRate = 1;
+    video.dispatchEvent(new Event('ratechange'));
+    expect(video.playbackRate).toBe(1.1);
+    controller.dispose();
+  });
+
   it('loops between A and B and releases the media when cleared', async () => {
     const video = seekableVideo(120);
     document.body.append(video);

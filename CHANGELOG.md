@@ -44,6 +44,18 @@ Bu dosya [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) biçimini ve
   Tampon gerçekten azaldığında kurtarma eskisi gibi devreye girer; `16x` ile
   eklentisiz `14.99x` arasındaki fark bu kasıtlı takılma korumasından gelir.
 
+- **Sitenin kendi klavye kısayoluyla yaptığı hız değişikliği geri alınıyordu.**
+  Kullanıcı jesti yalnızca `pointerdown` ile kaydediliyordu; bizim bir hız
+  tuşumuza bastıktan sonraki 8 saniye içinde YouTube’un `<`/`>` kısayolunu
+  kullanmak sessizce eski hıza dönüyordu. Tüketmediğimiz her tuş basışı artık
+  kullanıcı jesti sayılıyor. Fare menüsüyle yapılan değişiklikler zaten
+  doğru çalışıyordu; sessiz sıfırlamalara karşı koruma da korunuyor.
+
+  Not: eşleştirme `event.code` ile yapıldığı için klavye düzeninden bağımsızdır.
+  Türkçe Mac’te `Shift+ö` ve `Shift+ç`, US düzenindeki `Shift+,` ve `Shift+.`
+  ile aynı kodları üretir; kare adımlama aynı fiziksel tuşlara atanmış olsa bile
+  modifier eşleşmesi birebir olduğu için çakışma olmaz.
+
 - Hız rozetinin üzerindeyken sayfanın arka planda değişmesi rozeti soluklaştırıyor
   ve `−`/`+` düğmelerine tıklamayı zorlaştırıyordu. Rozet artık fare üzerindeyken
   yalnızca fare ayrıldıktan sonra soluklaşır.
